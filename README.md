@@ -32,7 +32,7 @@ A well-thought-out design, four years of direct development effort, and multiple
 | Interface | All MIPI D-PHY / LVDS / Sub-LVDS / Low Voltage LVDS / SLVS sensors |
 | Resolution | ~128 Mpixel max, no min limit |
 | Shutter | Global or rolling shutter |
-| Number of Data Lanes | Up to 8 lanes — 4 lanes × 1 channel or 4 lanes × 2 channels |
+| Number of Data Lanes | Up to 8 lanes - 4 lanes × 1 channel or 4 lanes × 2 channels |
 | Number of Sensors | 2 (4 lanes), 3 (2 lanes) |
 | Max Data Rate | 1.25 Gbps/lane, max 10 Gbps with 8 lanes |
 | Pixel Format | RAW8, RAW12, RAW14, PWL HDR |
