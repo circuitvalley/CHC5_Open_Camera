@@ -67,8 +67,8 @@ A well-thought-out design, four years of direct development effort, and multiple
 
 ## Camera Interface
 
-- USB3 5 Gbps — USB UVC, USB3 Vision
-- Ethernet 1 Gbps — GigE Vision
+- USB3 5 Gbps - USB UVC, USB3 Vision
+- Ethernet 1 Gbps - GigE Vision
 - HDMI 1080p
 - Simultaneous streaming over all 3 interfaces
 
