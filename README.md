@@ -1,5 +1,7 @@
 # CHC5 Open Camera System
 
+![alt text](https://raw.githubusercontent.com/circuitvalley/CHC5_Open_Camera/blob/main/Hardware/Images/Hardware/chc5_camera_system_circuitvalley_publis.JPG)
+
 # CHC5 Camera Specifications
 
 A well-thought-out design, four years of direct development effort, and multiple years of experience building cameras and video stacks.
