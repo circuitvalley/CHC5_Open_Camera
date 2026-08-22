@@ -6,7 +6,7 @@ A well-thought-out design, four years of direct development effort, and multiple
 
 ## Interchangeable Lens Mount
 
-- Minimum flange distance of 12mm makes it possible to connect almost any lens
+- Minimum flange distance of 8.75mm makes it possible to connect almost any lens
 - Currently available lens mounts:
   - C-Mount
   - CS-Mount
