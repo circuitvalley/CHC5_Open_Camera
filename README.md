@@ -14,7 +14,7 @@ A well-thought-out design, four years of direct development effort, and multiple
   - C-Mount
   - CS-Mount
   - Canon RF-Mount (Manual Controls)
-  - Sony E-Mount
+  - Sony E-Mount (Manual Controls)
   - M42 Mount with Multiple Flange Distance
   - S Mount
   - M43 or Custom Lens Mount
@@ -106,9 +106,5 @@ This work is licensed under a
 [cc-by-nc-nd]: http://creativecommons.org/licenses/by-nc-nd/4.0/
 [cc-by-nc-nd-image]: https://licensebuttons.net/l/by-nc-nd/4.0/88x31.png
 [cc-by-nc-nd-shield]: https://img.shields.io/badge/License-CC%20BY--NC--ND%204.0-lightgrey.svg
-
-
-![alt text](https://raw.githubusercontent.com/circuitvalley/CHC5_Open_Camera/refs/heads/main/Hardware/Images/chc5_open_source_camera_primary_thumb.jpeg)
-
 
 
