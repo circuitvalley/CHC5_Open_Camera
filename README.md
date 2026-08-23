@@ -108,7 +108,3 @@ This work is licensed under a
 [cc-by-nc-nd-shield]: https://img.shields.io/badge/License-CC%20BY--NC--ND%204.0-lightgrey.svg
 
 
-![alt text](https://raw.githubusercontent.com/circuitvalley/CHC5_Open_Camera/refs/heads/main/Hardware/Images/chc5_open_source_camera_primary_thumb.jpeg)
-
-
-
