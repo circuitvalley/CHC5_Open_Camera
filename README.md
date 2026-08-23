@@ -14,7 +14,7 @@ A well-thought-out design, four years of direct development effort, and multiple
   - C-Mount
   - CS-Mount
   - Canon RF-Mount (Manual Controls)
-  - Sony E-Mount
+  - Sony E-Mount (Manual Controls)
   - M42 Mount with Multiple Flange Distance
   - S Mount
   - M43 or Custom Lens Mount
