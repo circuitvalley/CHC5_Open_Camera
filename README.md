@@ -5,6 +5,10 @@
 
 [CHC5 Open Camera Lens Mount and Sensors Part 3](https://www.circuitvalley.com/2026/08/chc5-open-camera-lens-mount-sensor-support.html)
 
+[CHC5 Open Camera Software Architecture Part 4 ](https://www.circuitvalley.com/2026/08/chc5-open-camera-gige-usb3-vision-software-fpga.html)
+
+
+
 
 ![alt text](https://raw.githubusercontent.com/circuitvalley/CHC5_Open_Camera/refs/heads/main/Hardware/Images/Hardware/chc5_camera_system_circuitvalley_publis.JPG)
 ![alt text](https://raw.githubusercontent.com/circuitvalley/CHC5_Open_Camera/refs/heads/main/Hardware/Images/Hardware/chc5_open_camer_u3v_gige_vision_fpga_camera_custom.JPG)
