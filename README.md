@@ -10,6 +10,11 @@
 
 
 
+<a href="https://www.youtube.com/watch?v=lzu9AW7AP2k">
+<img src="https://raw.githubusercontent.com/circuitvalley/CHC5_Open_Camera/refs/heads/main/Hardware/Images/Hardware/chc5_youtubethumb1.png" alt="OpenSourceCamera" width="720" height="400">
+</a>
+
+
 ![alt text](https://raw.githubusercontent.com/circuitvalley/CHC5_Open_Camera/refs/heads/main/Hardware/Images/Hardware/chc5_camera_system_circuitvalley_publis.JPG)
 ![alt text](https://raw.githubusercontent.com/circuitvalley/CHC5_Open_Camera/refs/heads/main/Hardware/Images/Hardware/chc5_open_camer_u3v_gige_vision_fpga_camera_custom.JPG)
 
@@ -100,10 +105,6 @@ A well-thought-out design, four years of direct development effort, and multiple
 - 1× Isolated output, user-configurable
 
 
-
-<a href="https://www.youtube.com/watch?v=F9n1e-QN0zk">
-<img src="https://raw.githubusercontent.com/circuitvalley/CHC5_Open_Camera/refs/heads/main/Hardware/Images/chc5_open_camera_youtube.png" alt="OpenSourceCamera" width="720" height="400">
-</a>
 
 
 Shield: [![CC BY-NC-ND 4.0][cc-by-nc-nd-shield]][cc-by-nc-nd]
