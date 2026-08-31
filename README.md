@@ -7,6 +7,8 @@
 
 [CHC5 Open Camera Software Architecture Part 4 ](https://www.circuitvalley.com/2026/08/chc5-open-camera-gige-usb3-vision-software-fpga.html)
 
+[CHC5 Open Camera ISP FPGA Architecture Part 5](https://www.circuitvalley.com/2026/08/chc5-open-camera-isp-fpga-architecture-gige-vision-usb3-vision-hdmi.html)
+
 
 ![alt text](https://raw.githubusercontent.com/circuitvalley/CHC5_Open_Camera/refs/heads/main/Hardware/Images/Hardware/chc5_camera_system_circuitvalley_publis.JPG)
 ![alt text](https://raw.githubusercontent.com/circuitvalley/CHC5_Open_Camera/refs/heads/main/Hardware/Images/Hardware/chc5_open_camer_u3v_gige_vision_fpga_camera_custom.JPG)
