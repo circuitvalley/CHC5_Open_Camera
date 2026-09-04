@@ -1,0 +1,3 @@
+[submodule "chc5_sensor_v4l2_drivers"]
+	path = chc5_sensor_v4l2_drivers
+	url = https://github.com/circuitvalley/chc5_sensor_v4l2_drivers
