@@ -111,9 +111,10 @@ A well-thought-out design, four years of direct development effort, and multiple
 
 ## Aux I/O
 
-- 1× Isolated input, user-configurable
+- 1× Isolated input, user-configurable 
 - 1× Isolated output, user-configurable
-
+- Multiple Camera Sync of Aux Lines
+- Flash, Strobe Control and Expsoure time mintoring 
 
 
 
