@@ -42,7 +42,8 @@ A well-thought-out design, four years of direct development effort, and multiple
   - Sony E-Mount (Manual Controls)
   - M42 Mount with Multiple Flange Distance
   - S Mount
-  - M43 or Custom Lens Mount
+  - MFT M4/3 Micro Third Mount
+  - M43 Thread or Custom Lens Mount
 
 ## Frame Rate
 
