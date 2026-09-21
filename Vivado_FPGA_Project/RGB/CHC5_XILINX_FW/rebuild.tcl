@@ -126,7 +126,7 @@ create_project ${_xil_proj_name_} ./${_xil_proj_name_} -part xc7z020clg400-2
 set proj_dir [get_property directory [current_project]]
 
 set obj [current_project]
-set_property -name "board_part_repo_paths" -value "[file normalize "$origin_dir/../Circuitvalley_CHC5_Board"]" -objects $obj
+set_property -name "board_part_repo_paths" -value "[file normalize "$origin_dir/../../CHC5_Vivado_Board_Files"]" -objects $obj
 set_property -name "board_part" -value "circuitvalley.com:circuitvalley_chc5:part0:1.0" -objects $obj
 set_property -name "default_lib" -value "xil_defaultlib" -objects $obj
 set_property -name "enable_resource_estimation" -value "0" -objects $obj

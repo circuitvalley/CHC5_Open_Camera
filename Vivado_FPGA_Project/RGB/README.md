@@ -53,7 +53,6 @@ The archive format and every manifest field are described in
 ./                                this folder
 +-- README.md                     this file
 +-- BITSTREAM_ARCHIVE.md          archive format and manifest reference
-+-- Circuitvalley_CHC5_Board/     Vivado board files (picked up automatically)
 +-- CHC5_XILINX_FW/
     +-- build.tcl                 ONE STEP: project + bitstream + camera archive
     +-- rebuild.tcl               recreates the Vivado project, block design included
@@ -65,6 +64,9 @@ The archive format and every manifest field are described in
     +-- third_party/
         +-- digilent-vivado-library/   rgb2dvi HDMI IP, unmodified (see License)
 ```
+
+The Vivado board files are one level up, in `../CHC5_Vivado_Board_Files/`, shared by the
+RGB and Mono projects; the scripts find them there.
 
 Generated, disposable and never committed:
 
@@ -81,7 +83,7 @@ Generated, disposable and never committed:
 | **AMD licenses** | License features `mipi_csi2_rx_ctrl` (MIPI CSI-2 RX Subsystem) and `v_proc_ss` (Video Processing Subsystem) must be in a license file Vivado can find, for example through `XILINXD_LICENSE_FILE`. |
 | **Linux host** | `build.tcl` packs the archive with GNU `tar` and `xz`, both standard on Linux. `git` is optional: it stamps the source revision into the manifest. |
 | **Digilent HDMI IP** | Included: `rgb2dvi` 1.4 and its TMDS interface, copied unmodified from Digilent's `vivado-library` (commit `f4613ff`) into `CHC5_XILINX_FW/third_party/`. Nothing to fetch. |
-| **Board files** | Included in `Circuitvalley_CHC5_Board/`. The scripts point Vivado at them; nothing to install. |
+| **Board files** | Included in `../CHC5_Vivado_Board_Files/` (shared with the Mono project). The scripts point Vivado at them; nothing to install. |
 
 A full build takes about 10 minutes with 8 or more parallel jobs.
 
@@ -93,9 +95,9 @@ A full build takes about 10 minutes with 8 or more parallel jobs.
 ## Installing the board files
 
 You only need this to use the CHC5 board in **your own** Vivado projects. Building this
-project does not need it: `rebuild.tcl` finds the board files in this folder by itself.
+project does not need it: `rebuild.tcl` finds the board files in `../CHC5_Vivado_Board_Files` by itself.
 
-The board files are the folder `Circuitvalley_CHC5_Board/circuitvalley_chc5`. Installing
+The board files are the folder `CHC5_Vivado_Board_Files/circuitvalley_chc5`, one level up from this folder. Installing
 them means copying that folder into Vivado's board folder, then restarting Vivado.
 
 ### Linux
@@ -105,7 +107,7 @@ them means copying that folder into Vivado's board folder, then restarting Vivad
 
    ```sh
    sudo mkdir -p /tools/Xilinx/Vivado/2024.2/data/xhub/boards/XilinxBoardStore/boards/Circuitvalley
-   sudo cp -r Circuitvalley_CHC5_Board/circuitvalley_chc5 \
+   sudo cp -r ../CHC5_Vivado_Board_Files/circuitvalley_chc5 \
        /tools/Xilinx/Vivado/2024.2/data/xhub/boards/XilinxBoardStore/boards/Circuitvalley/
    ```
 
@@ -121,7 +123,7 @@ them means copying that folder into Vivado's board folder, then restarting Vivad
    ```
 
 3. Create a folder named `Circuitvalley` there.
-4. Copy the folder `circuitvalley_chc5` (from `Circuitvalley_CHC5_Board` in this folder)
+4. Copy the folder `circuitvalley_chc5` (from `CHC5_Vivado_Board_Files`, one level up)
    into `Circuitvalley`. Windows may ask for administrator permission.
 5. Start Vivado.
 
@@ -337,7 +339,7 @@ vivado -mode batch -source build.tcl
 |---|---|
 | `digilentinc.com:ip:rgb2dvi:1.4` not found, or the IP is locked | `third_party/digilent-vivado-library/` is missing or was moved. It must stay inside `CHC5_XILINX_FW/`. |
 | License error for `mipi_csi2_rx_ctrl` or `v_proc_ss` | Vivado cannot find a license with those features. Point `XILINXD_LICENSE_FILE` at your license file. |
-| Board part `circuitvalley.com:circuitvalley_chc5:part0:1.0` not found | `Circuitvalley_CHC5_Board/` is missing or not next to `CHC5_XILINX_FW/`. For your own projects, see [Installing the board files](#installing-the-board-files). |
+| Board part `circuitvalley.com:circuitvalley_chc5:part0:1.0` not found | `CHC5_Vivado_Board_Files/` is missing; it must sit next to the `RGB/` and `Mono/` folders. For your own projects, see [Installing the board files](#installing-the-board-files). |
 | IP version errors while creating the block design | Not Vivado 2024.2. |
 | "Project already exists" when running `rebuild.tcl` directly | The generated folder is still there. Use `build.tcl`, which opens it, or see [Starting over](#starting-over). |
 | `build.tcl: unknown option` | Only `--jobs N`, `--clean` and `--help` are accepted, after `-tclargs`. |
