@@ -1,0 +1,284 @@
+# SPDX-License-Identifier: GPL-2.0
+
+comment "Xilinx media platform drivers"
+
+config VIDEO_XILINX
+	tristate "Xilinx Video IP (EXPERIMENTAL)"
+	depends on V4L_PLATFORM_DRIVERS
+	depends on VIDEO_DEV  && OF && HAS_DMA
+	depends on DMADEVICES
+	select MEDIA_CONTROLLER
+	select VIDEO_V4L2_SUBDEV_API
+	select VIDEOBUF2_DMA_CONTIG
+	select XILINX_FRMBUF
+	select V4L2_FWNODE
+	help
+	  Driver for Xilinx Video IP Pipelines
+
+config VIDEO_XILINX_CSI2RXSS
+	depends on VIDEO_XILINX
+	tristate "Xilinx CSI-2 Rx Subsystem"
+	help
+	  Driver for Xilinx MIPI CSI-2 Rx Subsystem. This is a V4L sub-device
+	  based driver that takes input from CSI-2 Tx source and converts
+	  it into an AXI4-Stream.
+
+config VIDEO_XILINX_AXI4S_SWITCH
+	tristate "Xilinx AXI4-Stream Video Switch"
+	depends on VIDEO_XILINX
+	help
+	  Driver for the Xilinx AXI4-Stream Video Switch. This is a
+	  V4L sub device based driver. It supports fixed (TDEST based)
+	  as well as dynamic (control register based) routing.
+	  Say M to modularize. Say N if unsure.
+
+config VIDEO_XILINX_CFA
+	tristate "Xilinx Video Color Filter Array"
+	depends on VIDEO_XILINX
+	help
+	  Driver for the Xilinx Color Filter Array
+
+config VIDEO_XILINX_CRESAMPLE
+	tristate "Xilinx Video Chroma Resampler"
+	depends on VIDEO_XILINX
+	help
+	  Driver for the Xilinx Chroma Resampler
+
+config VIDEO_XILINX_DEMOSAIC
+	tristate "Xilinx Video Demosaic IP"
+	depends on VIDEO_XILINX
+	help
+	  Driver for Xilinx Video Demosaic IP. This is a V4L sub-device
+	  based driver for the Demosaic IP that takes input a Bayer video
+	  stream format as input and generates an RGB video output.
+	  Say M to modularize. Say N if unsure.
+
+config VIDEO_XILINX_GAMMA
+	tristate "Xilinx Gamma Correction LUT"
+	depends on VIDEO_XILINX
+	help
+	  Driver for Xilinx Gamma Correction LUT IP. This is a V4L sub-device
+	  based driver that exposes V4L controls to adjust Red, Blue and Green
+	  Gamma Correction.
+
+	  Say M to modularize. Say N if unsure.
+
+config VIDEO_XILINX_HDCP1X_RX
+	bool
+	select XLNX_HDCP1X_CIPHER
+	help
+	  Functionality of HDCP1X Rx for DP and HDMI. It handles the hdcp1x rx
+	  authentication. Choose this config in a platform where the DP/HDMI Rx
+	  subsystem enabled with HDCP1X.
+
+config VIDEO_XILINX_HDCP2X_RX
+	bool
+	select XILINX_HDCP_COMMON
+	select CRYPTO_AES
+	help
+	  Functionality of HDCP2X Rx for DP and HDMI. It handles the hdcp2x rx
+	  authentication. Choose this config in a platform where the DP/HDMI Rx
+	  subsystem enabled with HDCP2X.
+
+
+config VIDEO_XILINX_HDMI21RXSS
+	tristate "Xilinx HDMI 2.1 Rx Subsystem"
+	depends on VIDEO_XILINX
+	select VIDEO_XILINX_HDCP1X_RX
+	select VIDEO_XILINX_HDCP2X_RX
+	help
+	  Driver for the Xilinx HDMI 2.1 Rx subsystem to capture HDMI streams.
+	  This is a V4L2 subdev driver which used to get the stream properties
+	  like timing, color format and depth, frame rate.
+
+	  Say M to modularize. Say N if unsure.
+
+config VIDEO_XILINX_HLS
+	tristate "Xilinx Video HLS Core"
+	depends on VIDEO_XILINX
+	help
+	  Driver for the Xilinx Video HLS Cores
+
+config VIDEO_XILINX_ISP
+	tristate "Xilinx Video ISP pipeline"
+	depends on VIDEO_XILINX
+	help
+	  Driver for Xilinx Video ISP pipeline. This is a V4L sub-device
+	  based driver for Video ISP pipeline that takes a bayer video
+	  stream format as input and generates an RGB video output.
+	  Say M to modularize. Say N if unsure.
+
+config VIDEO_XILINX_REMAPPER
+	tristate "Xilinx Video Remapper"
+	depends on VIDEO_XILINX
+	help
+	  Driver for the Xilinx Video Remapper
+
+config VIDEO_XILINX_RGB2YUV
+	tristate "Xilinx Video RGB to YUV Converter"
+	depends on VIDEO_XILINX
+	help
+	  Driver for the Xilinx Video RGB to YUV Converter
+
+config VIDEO_XILINX_SCALER
+	tristate "Xilinx Video Scaler"
+	depends on VIDEO_XILINX
+	help
+	  Driver for the Xilinx Video Scaler
+
+config VIDEO_XILINX_MULTISCALER
+	tristate "Xilinx Video Multiscaler"
+	depends on VIDEO_XILINX
+	depends on VIDEO_DEV
+	select V4L2_MEM2MEM_DEV
+	select VIDEOBUF2_DMA_CONTIG
+	help
+	  Driver for the Xilinx Video Multi Scaler. This is a V4L2 memory to
+	  memory based driver. Multi-Scaler has max 8 channels which can be
+	  programed for different scaling ratio.
+
+config VIDEO_XILINX_SDIRXSS
+	tristate "Xilinx SDI Rx Subsystem"
+	depends on VIDEO_XILINX
+	help
+	  Driver for Xilinx SDI Rx Subsystem
+
+config VIDEO_XILINX_SWITCH
+	tristate "Xilinx Video Switch"
+	depends on VIDEO_XILINX
+	help
+	  Driver for the Xilinx Video Switch
+
+config VIDEO_XILINX_TPG
+	tristate "Xilinx Video Test Pattern Generator"
+	depends on VIDEO_XILINX
+	select VIDEO_XILINX_VTC
+	help
+	  Driver for the Xilinx Video Test Pattern Generator
+
+config VIDEO_XILINX_VPSS_CSC
+	tristate "Xilinx VPSS CSC"
+	depends on VIDEO_XILINX
+	help
+	  Driver for the Xilinx Video Processing Sub-System (VPSS)
+	  Color Space Conversion. The driver provides RGB to YUV444
+	  conversion and provides video controls like Brightness,
+	  Contrast, Color Gains that can be applied to video.
+	  Say N if unsure. Say M to modularize.
+
+config VIDEO_XILINX_VPSS_SCALER
+	tristate "Xilinx Video VPSS Scaler"
+	depends on VIDEO_XILINX
+	help
+	  Driver for Xilinx Video Processing Sub-System(VPSS) Scaler.
+	  It allows upscaling and downscaling of video. It also supports
+	  limited Color Space Conversion.
+	  Say N if unsure.
+
+config VIDEO_XILINX_VTC
+	tristate "Xilinx Video Timing Controller"
+	depends on VIDEO_XILINX
+	help
+	  Driver for the Xilinx Video Timing Controller
+
+config VIDEO_XILINX_DPRXSS
+	tristate "Xilinx DP Rx Subsystem"
+	depends on VIDEO_XILINX
+	select VIDEO_XILINX_HDCP1X_RX
+	select VIDEO_XILINX_HDCP2X_RX
+	select DRM_DISPLAY_HELPER
+	select DRM_DISPLAY_DP_HELPER
+	help
+	  Driver for Xilinx DisplayPort Rx Subsystem. This is a V4L sub-device
+	  based driver for the DisplayPort receiver subsystem IP. It captures
+	  AXI-Stream video data and output to video IPs. Choose this driver
+	  in a platform where the DisplayPort rx subsystem can be instantiated.
+
+config VIDEO_XILINX_SCD
+	tristate "Xilinx Scene Change Detect"
+	depends on VIDEO_XILINX
+	help
+	  Driver for Xilinx Scene Change Detection Controller.
+	  The driver allows applications to pass video buffers and
+	  provides if scene change detection is present between
+	  adjacent frames.
+
+config VIDEO_XILINX_M2M
+	tristate "Xilinx Video mem2mem"
+	depends on VIDEO_XILINX
+	select V4L2_MEM2MEM_DEV
+	help
+	  Driver for Xilinx V4L2 mem2mem pipeline operation to achieve memory
+	  copy between two different physical memories using DMA transfers.
+
+config VIDEO_XILINX_AXI4S_BROADCASTER
+	tristate "Xilinx AXI4-Stream Video Broadcaster"
+	depends on VIDEO_XILINX
+	help
+	  Driver for the Xilinx AXI4-Stream Video Broadcaster. This is a
+	  V4L sub device based driver. It replicates a single input AXI4-Stream
+	  into multiple output AXI4-Stream.
+	  Say M to modularize. Say N if unsure.
+
+config VIDEO_XILINX_AXI4S_SUBSETCONV
+	tristate "Xilinx AXI4-Stream Subset Converter"
+	depends on VIDEO_XILINX
+	help
+	  This subset converter driver is for configuring the Xilinx
+	  subset converter IP which is a non-memory mapped IP used for
+	  converting formats. The format conversion of source pad and
+	  sink pad in the pipeline done by subset conveter IP will be
+	  mapped in this driver.
+	  To compile this driver as a module, choose M here.
+	  If unsure, choose N
+
+config VIDEO_CHC5_VIPP
+	tristate "CHC5 VIPP Fake Pipeline"
+	depends on VIDEO_DEV
+	select VIDEOBUF2_VMALLOC
+	select VIDEOBUF2_MEMOPS
+	help
+	  CHC5 video pipeline.
+
+config VIDEO_CHC5_AXISVT
+	tristate "CHC5 AXIS to Video Timing"
+	depends on VIDEO_DEV
+	help
+	  CHC5 video timing.
+
+config VIDEO_CHC5_BLKC
+	tristate "CHC5 AXIS Video Black Level Corrector Module"
+	depends on VIDEO_DEV
+	help
+	  CHC5 black level corrector.
+
+config VIDEO_CHC5_PPCK
+	tristate "CHC5 AXIS Pixel Re-Packer Module"
+	depends on VIDEO_DEV
+	help
+	  CHC5 pixel packer.
+
+config VIDEO_CHC5_VDMA_TRIPLE
+	tristate "CHC5 VDMA Triple Driver"
+	depends on VIDEO_DEV
+	help
+	  CHC5 VDMA triple buffer.
+
+config VIDEO_CHC5_CROP
+	tristate "CHC5 Programmable Crop"
+	depends on VIDEO_DEV
+	help
+	  CHC5 crop.
+
+config VIDEO_CHC5_XVSUB
+	tristate "CHC5 Video Sub Sampler"
+	depends on VIDEO_DEV
+	help
+	  CHC5 video subsystem.
+
+config VIDEO_CHC5_CAMIO
+	tristate "CHC5 Camera Aux I/O + Sync Module"
+	depends on VIDEO_DEV
+	depends on PTP_1588_CLOCK_OPTIONAL
+	help
+	  CHC5 camera I/O and sync.
