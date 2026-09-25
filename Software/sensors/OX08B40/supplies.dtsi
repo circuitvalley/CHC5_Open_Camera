@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: CC-BY-NC-ND-4.0
+/*
+ * supplies.dtsi - OX08B40 clock and power supplies
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+
+		clk_24m: clock_24m {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <24000000>;
+		};
+		
+
+		ox08b40_avdd: fixedregulator@3 {
+			compatible = "regulator-fixed";
+			regulator-name = "ox08b40_avdd";
+			regulator-min-microvolt = <2900000>;
+			regulator-max-microvolt = <2900000>;
+			enable-active-high;
+		};
+
+		ox08b40_dovdd: fixedregulator@4 {
+			compatible = "regulator-fixed";
+			regulator-name = "ox08b40_dovdd";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		ox08b40_dvdd: fixedregulator@5 {
+			compatible = "regulator-fixed";
+			regulator-name = "ox08b40_dvdd";
+			regulator-min-microvolt = <1100000>;
+			regulator-max-microvolt = <1100000>;
+		};

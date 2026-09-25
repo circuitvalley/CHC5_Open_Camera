@@ -1,0 +1,44 @@
+/* SPDX-License-Identifier: CC-BY-NC-ND-4.0 */
+/*
+ * kernel.its - kernel FIT image description (zImage + device tree)
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+
+/dts-v1/;
+/ {
+	description = "CHC5 kernel FIT (zImage + DTB)";
+	#address-cells = <1>;
+
+	images {
+		kernel {
+			description = "Linux zImage";
+			data = /incbin/("./zImage");
+			type = "kernel";
+			arch = "arm";
+			os = "linux";
+			compression = "none";
+			load = <0x00208000>;
+			entry = <0x00208000>;
+			hash-1 { algo = "sha256"; };
+		};
+		fdt {
+			description = "zynq-chc5 devicetree";
+			data = /incbin/("./zynq-chc5.dtb");
+			type = "flat_dt";
+			arch = "arm";
+			compression = "none";
+			hash-1 { algo = "sha256"; };
+		};
+	};
+
+	configurations {
+		default = "conf";
+		conf {
+			description = "CHC5 default";
+			kernel = "kernel";
+			fdt = "fdt";
+		};
+	};
+};

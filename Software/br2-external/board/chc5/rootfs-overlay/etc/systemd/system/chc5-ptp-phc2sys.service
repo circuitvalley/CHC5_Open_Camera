@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-ptp-phc2sys.service - PTP clock synchronisation
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 PTP mode: Zynq GEM clock follows the PHY clock (phc2sys)
+Documentation=file:/usr/lib/chc5/chc5-ptp.sh
+BindsTo=chc5-ptp.service
+After=chc5-ptp.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/chc5/chc5-ptp.sh phc2sys
+Restart=on-failure
+RestartSec=2

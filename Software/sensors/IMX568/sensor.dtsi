@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: CC-BY-NC-ND-4.0
+/*
+ * sensor.dtsi - IMX568 sensor node
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+
+#address-cells = <0x01>;
+#size-cells = <0x00>;
+
+imx568: sensor@1a {
+	compatible = "sony,imx568";
+	reg = <0x1a>;
+	clocks = <&clk_37m125>;
+	VANA-supply = <&imx568_vana>;
+	VDIG-supply = <&imx568_vdig>;
+	VDDL-supply = <&imx568_vddl>;
+	link-frequencies = <0x00 0x1a8dca60>;
+
+	port {
+		direction = "input";
+
+		sensor_out: endpoint {
+			remote-endpoint = <&csiss_in>;
+			data-lanes = <CHC5_DATA_LANES>;
+			link-frequencies = <0x00 0x1a8dca60>;
+		};
+	};
+};

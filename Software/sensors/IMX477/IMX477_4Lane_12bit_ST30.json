@@ -1,0 +1,183 @@
+{
+  "manifest_kind": "sensor_v1",
+  "manifest_version": 1,
+  "manifest": {
+    "version": "1.9.0",
+    "description": "IMX477, 4 lanes, 12-bit, Xilinx colour pipeline (ST30)",
+    "vendor": "Sony",
+    "model": "IMX477"
+  },
+  "kernel": {
+    "module": "imx477",
+    "lanes": 4
+  },
+  "sensor": {
+    "lanes": "2,4",
+    "lanes_wired": 4,
+    "width": 4048,
+    "height": 3040,
+    "width_inc": 16,
+    "height_inc": 8,
+    "color_filter": "BayerRG",
+    "bit_depth": 12
+  },
+  "exposure": {
+    "min_us": 10,
+    "max_us": 1000000
+  },
+  "gain": {
+    "min_db_x10": 0,
+    "max_db_x10": 750,
+    "ref": 1024,
+    "reg_max": 65535
+  },
+  "black_level": {
+    "min": 0,
+    "max": 256
+  },
+  "fps": {
+    "min_mhz": 100,
+    "max_mhz": 4000000
+  },
+  "binning": {
+    "max_h": 2,
+    "max_v": 2,
+    "width": 2016,
+    "width_min": 128
+  },
+  "decimation": {
+    "max_h": 4,
+    "max_v": 4
+  },
+  "camio": {
+    "has_xvs": 1,
+    "xvs_out": 1,
+    "xvs_in": 1,
+    "has_xhs": 0,
+    "has_xtrig": 0,
+    "strobe": "fstrobe",
+    "shutter": "rolling",
+    "role": "i2c",
+    "trigger": "xvs"
+  },
+  "pixel_formats": [
+    {
+      "name": "Mono8",
+      "pfnc": 17301505
+    },
+    {
+      "name": "BayerRG8",
+      "pfnc": 17301513
+    },
+    {
+      "name": "BayerRG12",
+      "pfnc": 17825809
+    },
+    {
+      "name": "BayerRG12p",
+      "pfnc": 17563737
+    },
+    {
+      "name": "YUV422_8",
+      "pfnc": 34603058
+    },
+    {
+      "name": "YCbCr422_8",
+      "pfnc": 34603067
+    },
+    {
+      "name": "RGB565p",
+      "pfnc": 34603061
+    },
+    {
+      "name": "BGR8",
+      "pfnc": 35127317
+    }
+  ],
+  "uvc_modes": [
+    {
+      "w": 640,
+      "h": 480,
+      "fps": 60,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 1280,
+      "h": 720,
+      "fps": 60,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 1920,
+      "h": 1080,
+      "fps": 40,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 3840,
+      "h": 2160,
+      "fps": 21,
+      "src": "crop"
+    },
+    {
+      "w": 4048,
+      "h": 3040,
+      "fps": 10,
+      "src": "full"
+    }
+  ],
+  "ccm": "6141 -1576 -469 0 -1157 6460 -1207 0 8 -1924 6012 0",
+  "gamma": {
+    "x10": 5
+  },
+  "color_temp": {
+    "k3200": {
+      "r_x100": 131,
+      "b_x100": 229
+    },
+    "k4800": {
+      "r_x100": 178,
+      "b_x100": 168
+    },
+    "k5600": {
+      "r_x100": 199,
+      "b_x100": 153
+    },
+    "k6500": {
+      "r_x100": 217,
+      "b_x100": 140
+    }
+  },
+  "ccm_ct": {
+    "k3200": "6551 -1113 -1342 0 -2002 7697 -1599 0 302 -3432 7226 0",
+    "k4800": "6464 -1546 -822 0 -1380 6951 -1475 0 146 -2411 6361 0",
+    "k5600": "6141 -1576 -469 0 -1157 6460 -1207 0 8 -1924 6012 0",
+    "k6500": "5873 -1601 -176 0 -972 6052 -984 0 -107 -1519 5722 0"
+  },
+  "awb": {
+    "y_hi": 232,
+    "y_lo": 16,
+    "gray_thr": 16,
+    "gray_en": 1
+  },
+  "test_patterns": [
+    {
+      "name": "Off"
+    },
+    {
+      "name": "ColorBars"
+    },
+    {
+      "name": "SolidColor"
+    },
+    {
+      "name": "GreyColorBars"
+    },
+    {
+      "name": "PN9"
+    }
+  ]
+}

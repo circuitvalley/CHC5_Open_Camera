@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# fstab - filesystem table
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+/dev/root             /        auto    rw                        0      1
+
+/dev/mmcblk0p1        /boot    vfat    defaults,noatime,nofail   0      0

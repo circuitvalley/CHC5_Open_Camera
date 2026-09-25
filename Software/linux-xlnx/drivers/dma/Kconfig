@@ -805,7 +805,7 @@ config XILINX_VDMATEST
 	  DMA Device driver.
 
 config XILINX_VDMA_GIGEV
-        tristate "CHC5 GigE Vision Driver for VDMA"
+        tristate "CHC5 GigE Vision stream transmitter"
         depends on XILINX_DMA
         help
           CHC5 GigE Vision stream transmitter.

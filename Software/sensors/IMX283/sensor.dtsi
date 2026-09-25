@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: CC-BY-NC-ND-4.0
+/*
+ * sensor.dtsi - IMX283 sensor node
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+
+#address-cells = <0x01>;
+#size-cells = <0x00>;
+
+imx283: sensor@1a {
+	compatible = "sony,imx283";
+	reg = <0x1a>;
+	clocks = <&clk_24m>;
+	VANA-supply = <&imx283_vana>;
+	VDIG-supply = <&imx283_vdig>;
+	VDDL-supply = <&imx283_vddl>;
+	link-frequencies = <0x00 0x15752a00>;
+
+	port {
+		direction = "input";
+
+		sensor_out: endpoint {
+			remote-endpoint = <&csiss_in>;
+			data-lanes = <CHC5_DATA_LANES>;
+			link-frequencies = <0x00 0x15752a00>;
+		};
+	};
+};

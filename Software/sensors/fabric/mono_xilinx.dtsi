@@ -1,0 +1,478 @@
+// SPDX-License-Identifier: CC-BY-NC-ND-4.0
+/*
+ * mono_xilinx.dtsi - Xilinx mono pipeline blocks
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+
+clk_200M: clock_200M {
+	compatible = "fixed-clock";
+	#clock-cells = <0x00>;
+	clock-frequency = <0xbebba30>;
+};
+
+#ifdef CHC5_CSI2RX_CHC5
+#error "colour_xilinx.dtsi is the ST30 fabric: it has no chc5_csi2_rx. Drop CHC5_CSI2RX_CHC5."
+#endif
+xcsi2rxss_1: csi2rx@43C00000 {
+	compatible = "xlnx,mipi-csi2-rx-subsystem-5.0";
+	reg = <0x43c00000 0x1000>;
+	interrupt-parent = <0x04>;
+	interrupts = <0x00 0x1f 0x04>;
+	xlnx,csi-pxl-format = <CHC5_BAYER_FORMAT>;
+	xlnx,vfb;
+	xlnx,ppc = <0x01>;
+	xlnx,en-active-lanes;
+	xlnx,en-csi-v2-0;
+	xlnx,en-vcx;
+	clock-names = "lite_aclk\0dphy_clk_200M\0video_aclk";
+	clocks = <&clk_200M &clk_200M &clk_200M>;
+
+	ports {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		port@0 {
+			reg = <0x00>;
+			xlnx,video-format = <CHC5_BAYER_FORMAT>;
+			xlnx,video-width = <CHC5_BAYER_WIDTH>;
+
+			csiss_in: endpoint {
+				data-lanes = <CHC5_DATA_LANES>;
+				remote-endpoint = <&sensor_out>;
+			};
+		};
+
+		port@1 {
+			reg = <0x01>;
+			xlnx,video-format = <CHC5_BAYER_FORMAT>;
+
+			csiss_out: endpoint {
+				remote-endpoint = <&crop_in>;
+			};
+		};
+	};
+};
+
+chc5_crop_0: crop@40002000 {
+	compatible = "circuitvalley,chc5-crop-1.0";
+	reg = <0x40002000 0x1000>;
+	clocks = <&clk_200M>;
+	clock-names = "s_axi_aclk";
+	xlnx,ppc = <4>;
+
+	ports {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		port@0 {
+			reg = <0x00>;
+			xlnx,video-format = <CHC5_BAYER_FORMAT>;
+			xlnx,video-width = <CHC5_BAYER_WIDTH>;
+
+			crop_in: endpoint {
+				remote-endpoint = <&csiss_out>;
+			};
+		};
+
+		port@1 {
+			reg = <0x01>;
+			xlnx,video-format = <CHC5_BAYER_FORMAT>;
+			xlnx,video-width = <CHC5_BAYER_WIDTH>;
+
+			crop_out: endpoint {
+				remote-endpoint = <&blkc_in>;
+			};
+		};
+	};
+};
+
+blkc_0: blkc@40001000 {
+	compatible = "circuitvalley,chc5-blkc-1.0";
+	reg = <0x40001000 0x1000>;
+	clocks = <&clk_200M &clk_200M>;
+	clock-names = "s_axi_aclk\0aclk";
+
+	ports {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		port@0 {
+			reg = <0x00>;
+			xlnx,video-format = <CHC5_BAYER_FORMAT>;
+			xlnx,video-width = <CHC5_BAYER_WIDTH>;
+
+			blkc_in: endpoint {
+				remote-endpoint = <&crop_out>;
+			};
+		};
+
+		port@1 {
+			reg = <0x01>;
+			xlnx,video-format = <CHC5_BAYER_FORMAT>;
+			xlnx,video-width = <CHC5_BAYER_WIDTH>;
+
+			blkc_out_grey: endpoint {
+				remote-endpoint = <&gamma_in>;
+			};
+		};
+
+		port@2 {
+			reg = <0x02>;
+			xlnx,video-format = <CHC5_BAYER_FORMAT>;
+			xlnx,video-width = <CHC5_BAYER_WIDTH>;
+
+			blkc_out_eth: endpoint {
+				remote-endpoint = <&ppck0_in>;
+			};
+		};
+
+		port@3 {
+			reg = <0x03>;
+			xlnx,video-format = <CHC5_BAYER_FORMAT>;
+			xlnx,video-width = <CHC5_BAYER_WIDTH>;
+
+			blkc_out_usb: endpoint {
+				remote-endpoint = <&ppck1_in>;
+			};
+		};
+	};
+};
+
+chc5_xvsub_0: video-subsample@80002000 {
+	compatible = "circuitvalley,chc5-xvsub-1.0";
+	reg = <0x80002000 0x1000>;
+	clocks = <&clk_200M>;
+	clock-names = "s_axi_aclk";
+	xlnx,ppc = <0x02>;
+
+	ports {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		port@0 {
+			reg = <0x00>;
+
+			xvsub_sink: endpoint {
+				remote-endpoint = <&axis_vt_out>;
+			};
+		};
+
+		port@1 {
+			reg = <0x01>;
+
+			xvsub_source: endpoint {
+				remote-endpoint = <&vdma_triple_sink>;
+			};
+		};
+	};
+};
+
+chc5_vdma_triple_0: vdma-triple {
+	compatible = "circuitvalley,chc5-vdma-triple-1.0";
+	xlnx,num-fstores = <0x03>;
+	dmas = <&axi_vdma_0 0x00 &axi_vdma_0 0x01>;
+	dma-names = "vdma0\0vdma1";
+
+	ports {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		port@0 {
+			reg = <0x00>;
+
+			vdma_triple_sink: endpoint {
+				remote-endpoint = <&xvsub_source>;
+			};
+		};
+
+		port@1 {
+			reg = <0x01>;
+
+			vdma_triple_source: endpoint {
+				remote-endpoint = <&vcap_rgb_in>;
+			};
+		};
+	};
+};
+
+pixel_packer_0: pixel-packer_eth@40000000 {
+	compatible = "circuitvalley,chc5-pixel-packer-1.0";
+	reg = <0x40000000 0x1000>;
+	clocks = <&clk_200M>;
+	clock-names = "s_axi_aclk";
+	xlnx,fmt = <0x01>;
+
+	ports {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		port@0 {
+			reg = <0x00>;
+
+			ppck0_in: endpoint {
+				remote-endpoint = <&blkc_out_eth>;
+			};
+		};
+
+		port@1 {
+			reg = <0x01>;
+
+			ppck0_out: endpoint {
+				remote-endpoint = <&vcap_eth_in>;
+			};
+		};
+	};
+};
+
+pixel_packer_1: pixel-packer_usb@80000000 {
+	compatible = "circuitvalley,chc5-pixel-packer-1.0";
+	reg = <0x80000000 0x1000>;
+	clocks = <&clk_200M>;
+	clock-names = "s_axi_aclk";
+	xlnx,fmt = <0x01>;
+
+	ports {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		port@0 {
+			reg = <0x00>;
+
+			ppck1_in: endpoint {
+				remote-endpoint = <&blkc_out_usb>;
+			};
+		};
+
+		port@1 {
+			reg = <0x01>;
+
+			ppck1_out: endpoint {
+				remote-endpoint = <&vcap_usb_in>;
+			};
+		};
+	};
+};
+
+clk_150M: clock_150M {
+	compatible = "fixed-clock";
+	#clock-cells = <0x00>;
+	clock-frequency = <0x8f0d180>;
+};
+
+chc5_camio_0: camio-sync@80003000 {
+	compatible = "circuitvalley,chc5-camio-sync-1.0";
+	reg = <0x80003000 0x1000>;
+	clocks = <&clk_150M>;
+	clock-names = "s_axi_aclk";
+};
+
+v_gamma_lut_0: gamma@43c20000 {
+	compatible = "xlnx,v-gamma-lut";
+	reg = <0x43c20000 0x10000>;
+	clocks = <&clk_200M>;
+	clock-names = "ap_clk";
+	reset-gpios = <&gpio0 55 1>;
+	xlnx,max-width = <5568>;
+	xlnx,max-height = <3672>;
+
+	ports {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		port@0 {
+			reg = <0x00>;
+			xlnx,video-width = <8>;
+
+			gamma_in: endpoint {
+				remote-endpoint = <&blkc_out_grey>;
+			};
+		};
+
+		port@1 {
+			reg = <0x01>;
+			xlnx,video-width = <8>;
+
+			gamma_out: endpoint {
+				remote-endpoint = <&csc_yuv_in>;
+			};
+		};
+	};
+};
+
+v_csc_yuv_0: csc@43c40000 {
+	compatible = "xlnx,v-vpss-csc";
+	reg = <0x43c40000 0x10000>;
+	clocks = <&clk_200M>;
+	clock-names = "ap_clk";
+	reset-gpios = <&gpio0 57 1>;
+	xlnx,max-width = <5568>;
+	xlnx,max-height = <3672>;
+
+	ports {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		port@0 {
+			reg = <0x00>;
+			xlnx,video-format = <2>;
+			xlnx,video-width = <8>;
+
+			csc_yuv_in: endpoint {
+				remote-endpoint = <&gamma_out>;
+			};
+		};
+
+		port@1 {
+			reg = <0x01>;
+			xlnx,video-format = <0>;
+			xlnx,video-width = <8>;
+
+			csc_yuv_out: endpoint {
+				remote-endpoint = <&axis_vt_in>;
+			};
+		};
+	};
+};
+
+axis_vt_0: axis_vt@80001000 {
+	compatible = "circuitvalley,chc5-vtiming-1.0";
+	reg = <0x80001000 0x1000>;
+	clocks = <&clk_200M &clk_200M>;
+	clock-names = "s_axi_aclk\0clk_in";
+	xlnx,lines-per-frame = <0x438>;
+
+	ports {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		port@0 {
+			reg = <0x00>;
+
+			axis_vt_in: endpoint {
+				remote-endpoint = <&csc_yuv_out>;
+			};
+		};
+
+		port@1 {
+			reg = <0x01>;
+
+			axis_vt_out: endpoint {
+				remote-endpoint = <&xvsub_sink>;
+			};
+		};
+	};
+};
+
+axi_vdma_0: dma@83010000 {
+	#dma-cells = <0x01>;
+	clock-names = "s_axi_lite_aclk\0m_axi_mm2s_aclk\0m_axi_mm2s_aclk\0m_axi_s2mm_aclk\0m_axi_s2mm_aclk";
+	clocks = <&clkc 0x0f &clkc 0x0f &clkc 0x0f &clkc 0x0f &clkc 0x0f>;
+	compatible = "xlnx,axi-vdma-1.00.a";
+	interrupt-parent = <0x04>;
+	interrupts = <0x00 0x1d 0x04 0x00 0x1e 0x04>;
+	reg = <0x83010000 0x10000>;
+	xlnx,addrwidth = <0x20>;
+	xlnx,flush-fsync = <0x01>;
+	xlnx,num-fstores = <0x03>;
+
+	dma-channel@83010000 {
+		compatible = "xlnx,axi-vdma-mm2s-channel";
+		interrupt-parent = <0x04>;
+		interrupts = <0x00 0x1d 0x04>;
+		xlnx,datawidth = <0x18>;
+		xlnx,device-id = <0x00>;
+		xlnx,genlock-mode;
+		xlnx,include-dre;
+	};
+
+	dma-channel@83010030 {
+		compatible = "xlnx,axi-vdma-s2mm-channel";
+		interrupt-parent = <0x04>;
+		interrupts = <0x00 0x1e 0x04>;
+		xlnx,datawidth = <0x80>;
+		xlnx,device-id = <0x01>;
+		xlnx,genlock-mode;
+		xlnx,include-dre;
+	};
+};
+
+axi_vdma_1: dma@83000000 {
+	status = "disabled";
+	#dma-cells = <0x01>;
+	clock-names = "s_axi_lite_aclk\0m_axi_mm2s_aclk\0m_axi_mm2s_aclk\0m_axi_s2mm_aclk\0m_axi_s2mm_aclk";
+	clocks = <&clkc 0x0f &clkc 0x0f &clkc 0x0f &clkc 0x0f &clkc 0x0f>;
+	compatible = "xlnx,axi-vdma-1.00.a";
+	interrupt-parent = <0x04>;
+	interrupts = <0x00 0x21 0x04 0x00 0x20 0x04>;
+	reg = <0x83000000 0x10000>;
+	xlnx,addrwidth = <0x20>;
+	xlnx,flush-fsync = <0x01>;
+	xlnx,num-fstores = <0x05>;
+
+	dma-channel@83000000 {
+		compatible = "xlnx,axi-vdma-mm2s-channel";
+		interrupt-parent = <0x04>;
+		interrupts = <0x00 0x21 0x04>;
+		xlnx,datawidth = <0x40>;
+		xlnx,device-id = <0x00>;
+		xlnx,genlock-mode;
+		xlnx,include-dre;
+	};
+
+	dma-channel@83000030 {
+		compatible = "xlnx,axi-vdma-s2mm-channel";
+		interrupt-parent = <0x04>;
+		interrupts = <0x00 0x20 0x04>;
+		xlnx,datawidth = <0x40>;
+		xlnx,device-id = <0x01>;
+		xlnx,genlock-mode;
+		xlnx,include-dre;
+	};
+};
+
+vcap_pipeline_mipi_csi2_rx_0 {
+	compatible = "circuitvalley,chc5_vipp-video";
+	dma-names = [00];
+	dmas;
+
+	ports {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		port@0 {
+			direction = "input";
+			reg = <0x00>;
+			xlnx,video-format = <0x2c>;
+
+			vcap_rgb_in: endpoint {
+				remote-endpoint = <&vdma_triple_source>;
+			};
+		};
+
+		port@1 {
+			direction = "input";
+			reg = <0x01>;
+
+			vcap_eth_in: endpoint {
+				remote-endpoint = <&ppck0_out>;
+			};
+		};
+
+		port@2 {
+			direction = "input";
+			reg = <0x02>;
+
+			vcap_usb_in: endpoint {
+				remote-endpoint = <&ppck1_out>;
+			};
+		};
+	};
+};
+
+gvsp_tx_0: gvsp-tx@0 {
+	compatible = "xlnx,gvsp-tx-1.00.a";
+	vdma-node = <&axi_vdma_1>;
+	status = "okay";
+};

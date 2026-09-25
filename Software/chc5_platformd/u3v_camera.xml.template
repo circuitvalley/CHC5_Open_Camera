@@ -1,0 +1,1403 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+  <RegisterDescription
+ ModelName="CHC5"
+ VendorName="CircuitValley"
+ ToolTip="CHC5 USB3 Vision Camera"
+ StandardNameSpace="None"
+ SchemaMajorVersion="1"
+ SchemaMinorVersion="1"
+ SchemaSubMinorVersion="0"
+ MajorVersion="1"
+ MinorVersion="4"
+ SubMinorVersion="0"
+ ProductGuid="12345678-ABCD-ABCD-ABCD-123456789ABC"
+ VersionGuid="1920A4AB-AC6A-4CE3-947C-3E90A7071353"
+ xmlns="http://www.genicam.org/GenApi/Version_1_1"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://www.genicam.org/GenApi/Version_1_1
+ http://www.genicam.org/GenApi/GenApiSchema_Version_1_1.xsd">
+
+ <Category Name="Root">
+  <ToolTip>Root category for node traversal</ToolTip>
+  <pFeature>DeviceControl</pFeature>
+  <pFeature>ImageFormatControl</pFeature>
+  <pFeature>AcquisitionControl</pFeature>
+  <pFeature>DigitalIOControl</pFeature>
+  <pFeature>CHC5AuxSyncControl</pFeature>
+  <pFeature>AnalogControl</pFeature>
+  <pFeature>TransportLayerControl</pFeature>
+ </Category>
+
+ <Category Name="DeviceControl">
+  <ToolTip>Device information</ToolTip>
+  <pFeature>DeviceVendorName</pFeature>
+  <pFeature>DeviceModelName</pFeature>
+  <pFeature>DeviceSerialNumber</pFeature>
+  <pFeature>DeviceUserID</pFeature>
+  <pFeature>DeviceID</pFeature>
+  <pFeature>DeviceTemperature</pFeature>
+  <pFeature>TimestampLatch</pFeature>
+  <pFeature>TimestampLatchValue</pFeature>
+  <pFeature>TimestampReset</pFeature>
+  <pFeature>DeviceLinkThroughputLimitMode</pFeature>
+  <pFeature>DeviceLinkThroughputLimit</pFeature>
+ </Category>
+
+ <Category Name="ImageFormatControl">
+  <ToolTip>Image format configuration</ToolTip>
+  <pFeature>Width</pFeature>
+  <pFeature>Height</pFeature>
+  <pFeature>OffsetX</pFeature>
+  <pFeature>OffsetY</pFeature>
+  <pFeature>BinningHorizontal</pFeature>
+  <pFeature>BinningVertical</pFeature>
+  <pFeature>BinningHorizontalMode</pFeature>
+  <pFeature>BinningVerticalMode</pFeature>
+  <pFeature>PixelFormat</pFeature>
+  <pFeature>PixelColorFilter</pFeature>
+  <pFeature>ReverseX</pFeature>
+  <pFeature>ReverseY</pFeature>
+  <pFeature>SensorWidth</pFeature>
+  <pFeature>SensorHeight</pFeature>
+  <pFeature>TestPattern</pFeature>
+ </Category>
+
+ <Category Name="AcquisitionControl">
+  <ToolTip>Acquisition control</ToolTip>
+  <pFeature>AcquisitionMode</pFeature>
+  <pFeature>AcquisitionStart</pFeature>
+  <pFeature>AcquisitionStop</pFeature>
+  <pFeature>ExposureTime</pFeature>
+  <pFeature>ExposureAuto</pFeature>
+  <pFeature>AcquisitionFrameRate</pFeature>
+  <pFeature>AcquisitionFrameRateEnable</pFeature>
+  <pFeature>AEMeteringMode</pFeature>
+  <pFeature>AutoExposureTargetGreyValue</pFeature>
+  <pFeature>AutoExposureTimeLowerLimit</pFeature>
+  <pFeature>AutoExposureTimeUpperLimit</pFeature>
+  <pFeature>AutoFunctionAOIOffsetX</pFeature>
+  <pFeature>AutoFunctionAOIOffsetY</pFeature>
+  <pFeature>AutoFunctionAOIWidth</pFeature>
+  <pFeature>AutoFunctionAOIHeight</pFeature>
+  <pFeature>ResultingFrameRate</pFeature>
+ </Category>
+
+ <Category Name="AnalogControl">
+  <ToolTip>Analog signal conditioning</ToolTip>
+  <pFeature>Gain</pFeature>
+  <pFeature>GainAuto</pFeature>
+  <pFeature>BlackLevel</pFeature>
+  <pFeature>GammaEnable</pFeature>
+  <pFeature>GammaSelector</pFeature>
+  <pFeature>Gamma</pFeature>
+  <pFeature>BalanceWhiteAuto</pFeature>
+  <pFeature>BalanceRatioSelector</pFeature>
+  <pFeature>BalanceRatioRaw</pFeature>
+  <pFeature>BalanceWhiteAutoLowerLimitRaw</pFeature>
+  <pFeature>BalanceWhiteAutoUpperLimitRaw</pFeature>
+  <pFeature>BalanceWhiteAutoRateRaw</pFeature>
+  <pFeature>ColorTemperaturePreset</pFeature>
+ </Category>
+
+ <Category Name="TransportLayerControl">
+  <ToolTip>Transport layer parameters</ToolTip>
+  <pFeature>PayloadSize</pFeature>
+  <pFeature>TLParamsLocked</pFeature>
+ </Category>
+
+ <StringReg Name="DeviceVendorName">
+  <ToolTip>Name of the device vendor</ToolTip>
+  <Address>0x00000004</Address>
+  <Length>64</Length>
+  <AccessMode>RO</AccessMode>
+  <pPort>Device</pPort>
+ </StringReg>
+
+ <StringReg Name="DeviceModelName">
+  <ToolTip>Name of the device model</ToolTip>
+  <Address>0x00000044</Address>
+  <Length>64</Length>
+  <AccessMode>RO</AccessMode>
+  <pPort>Device</pPort>
+ </StringReg>
+
+ <StringReg Name="DeviceID">
+  <ToolTip>Unique device identifier (serial number)</ToolTip>
+  <Address>0x00000144</Address>
+  <Length>64</Length>
+  <AccessMode>RO</AccessMode>
+  <pPort>Device</pPort>
+ </StringReg>
+
+ <StringReg Name="DeviceSerialNumber">
+  <ToolTip>Device serial number (unique per unit, == GigE DeviceSerialNumber)</ToolTip>
+  <Address>0x00000144</Address>
+  <Length>64</Length>
+  <AccessMode>RO</AccessMode>
+  <pPort>Device</pPort>
+ </StringReg>
+
+ <StringReg Name="DeviceUserID">
+  <ToolTip>User-programmable device name (== GigE DeviceUserID / web "Device name")</ToolTip>
+  <Address>0x00000184</Address>
+  <Length>64</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+ </StringReg>
+
+ <Integer Name="Width">
+  <ToolTip>Width of the image in pixels</ToolTip>
+  <pIsLocked>TLParamsLockedAcq</pIsLocked>
+  <pValue>WidthReg</pValue>
+  <pMin>WidthMin</pMin>
+  <pMax>WidthMax</pMax>
+  <pInc>WidthIncSel</pInc>
+ </Integer>
+
+ <Integer Name="BinnedWidth">
+  <Visibility>Invisible</Visibility>
+  <Value>$$BINNED_WIDTH$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Integer Name="BinnedHeight">
+  <Visibility>Invisible</Visibility>
+  <Value>$$BINNED_HEIGHT$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Integer Name="SensorWidthInc">
+  <Visibility>Invisible</Visibility>
+  <Value>$$WIDTH_INC$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Integer Name="SensorHeightInc">
+  <Visibility>Invisible</Visibility>
+  <Value>$$HEIGHT_INC$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Integer Name="SensorWidthMin">
+  <Visibility>Invisible</Visibility>
+  <Value>$$WIDTH_MIN$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Integer Name="SensorHeightMin">
+  <Visibility>Invisible</Visibility>
+  <Value>$$HEIGHT_MIN$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Integer Name="BinnedWidthInc">
+  <Visibility>Invisible</Visibility>
+  <Value>$$BINNED_WIDTH_INC$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Integer Name="BinnedHeightInc">
+  <Visibility>Invisible</Visibility>
+  <Value>$$BINNED_HEIGHT_INC$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Integer Name="BinnedOffsetXInc">
+  <Visibility>Invisible</Visibility>
+  <Value>$$BINNED_OFFSET_X_INC$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Integer Name="BinnedOffsetYInc">
+  <Visibility>Invisible</Visibility>
+  <Value>$$BINNED_OFFSET_Y_INC$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Integer Name="SensorOffsetXInc">
+  <Visibility>Invisible</Visibility>
+  <Value>$$OFFSET_X_INC$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <IntSwissKnife Name="OffsetXIncSel">
+  <pVariable Name="BOI">BinnedOffsetXInc</pVariable>
+  <pVariable Name="SOI">SensorOffsetXInc</pVariable>
+  <pVariable Name="BX">BinningHorizontalReg</pVariable>
+  <Formula>((BX &gt; 1) ? BOI : SOI)</Formula>
+ </IntSwissKnife>
+
+ <Integer Name="SensorOffsetYInc">
+  <Visibility>Invisible</Visibility>
+  <Value>$$OFFSET_Y_INC$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <IntSwissKnife Name="OffsetYIncSel">
+  <pVariable Name="BOJ">BinnedOffsetYInc</pVariable>
+  <pVariable Name="SOJ">SensorOffsetYInc</pVariable>
+  <pVariable Name="BY">BinningVerticalReg</pVariable>
+  <Formula>((BY &gt; 1) ? BOJ : SOJ)</Formula>
+ </IntSwissKnife>
+
+ <IntSwissKnife Name="WidthIncSel">
+  <pVariable Name="BWI">BinnedWidthInc</pVariable>
+  <pVariable Name="BX">BinningHorizontalReg</pVariable>
+  <Formula>((BX &gt; 1) ? BWI : $$WIDTH_INC$$)</Formula>
+ </IntSwissKnife>
+
+ <IntSwissKnife Name="HeightIncSel">
+  <pVariable Name="BHI">BinnedHeightInc</pVariable>
+  <pVariable Name="BY">BinningVerticalReg</pVariable>
+  <Formula>((BY &gt; 1) ? BHI : $$HEIGHT_INC$$)</Formula>
+ </IntSwissKnife>
+
+ <Integer Name="BinnedWidthMin">
+  <Visibility>Invisible</Visibility>
+  <Value>$$BINNED_WIDTH_MIN$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Integer Name="BinnedHeightMin">
+  <Visibility>Invisible</Visibility>
+  <Value>$$BINNED_HEIGHT_MIN$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <IntSwissKnife Name="WidthMin">
+  <pVariable Name="BWM">BinnedWidthMin</pVariable>
+  <pVariable Name="BX">BinningHorizontalReg</pVariable>
+  <Formula>(((BX &gt; 1) &amp;&amp; (BWM &gt; 0)) ? BWM : $$WIDTH_MIN$$)</Formula>
+ </IntSwissKnife>
+
+ <IntSwissKnife Name="HeightMin">
+  <pVariable Name="BHM">BinnedHeightMin</pVariable>
+  <pVariable Name="BY">BinningVerticalReg</pVariable>
+  <Formula>(((BY &gt; 1) &amp;&amp; (BHM &gt; 0)) ? BHM : $$HEIGHT_MIN$$)</Formula>
+ </IntSwissKnife>
+
+ <IntSwissKnife Name="WidthMax">
+  <pVariable Name="SW">SensorWidth</pVariable>
+  <pVariable Name="BW">BinnedWidth</pVariable>
+  <pVariable Name="OX">OffsetXReg</pVariable>
+  <pVariable Name="BX">BinningHorizontalReg</pVariable>
+  <pVariable Name="WI">WidthIncSel</pVariable>
+  <Formula>((((BX &gt; 1) &amp;&amp; (BW &gt; 0)) ? BW : (SW / BX)) - OX) / WI * WI</Formula>
+ </IntSwissKnife>
+
+ <IntReg Name="WidthReg">
+
+      <pInvalidator>BinningHorizontalReg</pInvalidator>
+      <pInvalidator>BinningVerticalReg</pInvalidator>
+  <Address>0x05000000</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="Height">
+  <ToolTip>Height of the image in pixels</ToolTip>
+  <pIsLocked>TLParamsLockedAcq</pIsLocked>
+  <pValue>HeightReg</pValue>
+  <pMin>HeightMin</pMin>
+  <pMax>HeightMax</pMax>
+  <pInc>HeightIncSel</pInc>
+ </Integer>
+
+ <IntSwissKnife Name="HeightMax">
+  <pVariable Name="SH">SensorHeight</pVariable>
+  <pVariable Name="BHT">BinnedHeight</pVariable>
+  <pVariable Name="OY">OffsetYReg</pVariable>
+  <pVariable Name="BY">BinningVerticalReg</pVariable>
+  <pVariable Name="HI">HeightIncSel</pVariable>
+  <Formula>((((BY &gt; 1) &amp;&amp; (BHT &gt; 0)) ? BHT : (SH / BY)) - OY) / HI * HI</Formula>
+ </IntSwissKnife>
+
+ <IntReg Name="HeightReg">
+
+      <pInvalidator>BinningHorizontalReg</pInvalidator>
+      <pInvalidator>BinningVerticalReg</pInvalidator>
+  <Address>0x05000004</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="OffsetX">
+  <ToolTip>Horizontal offset from origin to ROI</ToolTip>
+  <pIsLocked>TLParamsLockedAcq</pIsLocked>
+  <pValue>OffsetXReg</pValue>
+  <Min>0</Min>
+  <pMax>OffsetXMax</pMax>
+  <pInc>OffsetXIncSel</pInc>
+ </Integer>
+
+ <IntSwissKnife Name="OffsetXMax">
+  <pVariable Name="SW">SensorWidth</pVariable>
+  <pVariable Name="BW">BinnedWidth</pVariable>
+  <pVariable Name="W">WidthReg</pVariable>
+  <pVariable Name="BX">BinningHorizontalReg</pVariable>
+  <pVariable Name="OI">OffsetXIncSel</pVariable>
+  <Formula>((((BX &gt; 1) &amp;&amp; (BW &gt; 0)) ? BW : (SW / BX)) - W) / OI * OI</Formula>
+ </IntSwissKnife>
+
+ <IntReg Name="OffsetXReg">
+
+      <pInvalidator>BinningHorizontalReg</pInvalidator>
+      <pInvalidator>BinningVerticalReg</pInvalidator>
+  <Address>0x0500001C</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="OffsetY">
+  <ToolTip>Vertical offset from origin to ROI</ToolTip>
+  <pIsLocked>TLParamsLockedAcq</pIsLocked>
+  <pValue>OffsetYReg</pValue>
+  <Min>0</Min>
+  <pMax>OffsetYMax</pMax>
+  <pInc>OffsetYIncSel</pInc>
+ </Integer>
+
+ <IntSwissKnife Name="OffsetYMax">
+  <pVariable Name="SH">SensorHeight</pVariable>
+  <pVariable Name="BHT">BinnedHeight</pVariable>
+  <pVariable Name="H">HeightReg</pVariable>
+  <pVariable Name="BY">BinningVerticalReg</pVariable>
+  <pVariable Name="OJ">OffsetYIncSel</pVariable>
+  <Formula>((((BY &gt; 1) &amp;&amp; (BHT &gt; 0)) ? BHT : (SH / BY)) - H) / OJ * OJ</Formula>
+ </IntSwissKnife>
+
+ <IntReg Name="OffsetYReg">
+
+      <pInvalidator>BinningHorizontalReg</pInvalidator>
+      <pInvalidator>BinningVerticalReg</pInvalidator>
+  <Address>0x05000020</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="BinningHorizontal">
+  <ToolTip>Number of horizontal pixels to combine</ToolTip>
+  <Description>Sets the number of adjacent horizontal pixels that are combined (binned). This reduces horizontal resolution and increases sensitivity.</Description>
+  <pIsLocked>TLParamsLockedAcq</pIsLocked>
+  <pValue>BinningHorizontalReg</pValue>
+  <Min>1</Min>
+  <Max>$$BINNING_MAX_H$$</Max>
+  <Inc>$$BINNING_INC_H$$</Inc>
+ </Integer>
+
+ <IntReg Name="BinningHorizontalReg">
+  <Address>0x05000050</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="BinningVertical">
+  <ToolTip>Number of vertical pixels to combine</ToolTip>
+  <Description>Sets the number of adjacent vertical pixels that are combined (binned). This reduces vertical resolution and increases sensitivity.</Description>
+  <pIsLocked>TLParamsLockedAcq</pIsLocked>
+  <pValue>BinningVerticalReg</pValue>
+  <Min>1</Min>
+  <Max>$$BINNING_MAX_V$$</Max>
+  <Inc>$$BINNING_INC_V$$</Inc>
+ </Integer>
+
+ <IntReg Name="BinningVerticalReg">
+  <Address>0x05000054</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Enumeration Name="BinningHorizontalMode" NameSpace="Standard">
+  <ToolTip>How the horizontal binning combines pixels. Read-only: a property of the readout, not a setting.</ToolTip>
+  <pValue>BinningModeVal</pValue>
+  $$BINNING_MODE_ENTRY$$
+  <AccessMode>RO</AccessMode>
+ </Enumeration>
+
+ <Enumeration Name="BinningVerticalMode" NameSpace="Standard">
+  <ToolTip>How the vertical binning combines pixels. Read-only: a property of the readout, not a setting.</ToolTip>
+  <pValue>BinningModeVal</pValue>
+  $$BINNING_MODE_ENTRY$$
+  <AccessMode>RO</AccessMode>
+ </Enumeration>
+
+ <Integer Name="BinningModeVal">
+  <Value>$$BINNING_MODE_VALUE$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <Enumeration Name="PixelFormat">
+  <ToolTip>Pixel format of the image data</ToolTip>
+  $$PIXEL_FORMAT_ENTRIES$$
+  <pIsLocked>TLParamsLockedAcq</pIsLocked>
+  <pValue>PixelFormatReg</pValue>
+ </Enumeration>
+
+ <IntReg Name="PixelFormatReg">
+  <Address>0x05000008</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <pInvalidator>ReverseXReg</pInvalidator>
+  <pInvalidator>ReverseYReg</pInvalidator>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <IntReg Name="CfaOrderReg">
+  <Address>0x050000BC</Address>
+  <Length>4</Length>
+  <AccessMode>RO</AccessMode>
+  <pPort>Device</pPort>
+  <pInvalidator>ReverseXReg</pInvalidator>
+  <pInvalidator>ReverseYReg</pInvalidator>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <IntSwissKnife Name="CfaIsRG">
+  <pVariable Name="C">CfaOrderReg</pVariable>
+  <Formula>(C = 1) || ((C = 0) &amp;&amp; ($$PIXEL_COLOR_FILTER$$ = 1))</Formula>
+ </IntSwissKnife>
+ <IntSwissKnife Name="CfaIsGB">
+  <pVariable Name="C">CfaOrderReg</pVariable>
+  <Formula>(C = 2) || ((C = 0) &amp;&amp; ($$PIXEL_COLOR_FILTER$$ = 2))</Formula>
+ </IntSwissKnife>
+ <IntSwissKnife Name="CfaIsGR">
+  <pVariable Name="C">CfaOrderReg</pVariable>
+  <Formula>(C = 3) || ((C = 0) &amp;&amp; ($$PIXEL_COLOR_FILTER$$ = 3))</Formula>
+ </IntSwissKnife>
+ <IntSwissKnife Name="CfaIsBG">
+  <pVariable Name="C">CfaOrderReg</pVariable>
+  <Formula>(C = 4) || ((C = 0) &amp;&amp; ($$PIXEL_COLOR_FILTER$$ = 4))</Formula>
+ </IntSwissKnife>
+
+ <Enumeration Name="PixelColorFilter" NameSpace="Standard">
+  <ToolTip>Type of color filter array (CFA)</ToolTip>
+  <DisplayName>Pixel Color Filter</DisplayName>
+  <Visibility>Expert</Visibility>
+  <EnumEntry Name="None" NameSpace="Standard"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="BayerRG" NameSpace="Standard"><Value>1</Value></EnumEntry>
+  <EnumEntry Name="BayerGB" NameSpace="Standard"><Value>2</Value></EnumEntry>
+  <EnumEntry Name="BayerGR" NameSpace="Standard"><Value>3</Value></EnumEntry>
+  <EnumEntry Name="BayerBG" NameSpace="Standard"><Value>4</Value></EnumEntry>
+  <pValue>PixelColorFilterCalc</pValue>
+ </Enumeration>
+ <IntSwissKnife Name="PixelColorFilterCalc">
+  <pVariable Name="C">CfaOrderReg</pVariable>
+  <Formula>(C > 0) ? C : $$PIXEL_COLOR_FILTER$$</Formula>
+ </IntSwissKnife>
+
+ <Integer Name="SensorWidth">
+  <ToolTip>Effective width of the sensor in pixels</ToolTip>
+  <Value>$$SENSOR_WIDTH$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <IntReg Name="SensorWidthReg">
+  <Address>0x05000024</Address>
+  <Length>4</Length>
+  <AccessMode>RO</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="SensorHeight">
+  <ToolTip>Effective height of the sensor in pixels</ToolTip>
+  <Value>$$SENSOR_HEIGHT$$</Value>
+  <AccessMode>RO</AccessMode>
+ </Integer>
+
+ <IntReg Name="SensorHeightReg">
+  <Address>0x05000028</Address>
+  <Length>4</Length>
+  <AccessMode>RO</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Enumeration Name="TestPattern">
+  <ToolTip>Selects the test pattern generator</ToolTip>
+  <EnumEntry Name="Off">
+   <Value>0</Value>
+  </EnumEntry>
+  <EnumEntry Name="GreyHorizontalRamp">
+   <Value>1</Value>
+  </EnumEntry>
+  <EnumEntry Name="GreyVerticalRamp">
+   <Value>2</Value>
+  </EnumEntry>
+  <EnumEntry Name="ColorBar">
+   <Value>3</Value>
+  </EnumEntry>
+  <pValue>TestPatternReg</pValue>
+ </Enumeration>
+
+ <IntReg Name="TestPatternReg">
+  <Address>0x05000034</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Enumeration Name="AcquisitionMode">
+  <ToolTip>Sets the acquisition mode</ToolTip>
+  <EnumEntry Name="Continuous">
+   <Value>0</Value>
+  </EnumEntry>
+  <EnumEntry Name="SingleFrame">
+   <Value>1</Value>
+  </EnumEntry>
+  <pValue>AcquisitionModeReg</pValue>
+ </Enumeration>
+
+ <IntReg Name="AcquisitionModeReg">
+  <Address>0x05000010</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Command Name="AcquisitionStart">
+  <ToolTip>Starts the acquisition of images</ToolTip>
+  <CommandValue>1</CommandValue>
+  <pValue>AcquisitionStartReg</pValue>
+ </Command>
+
+ <IntReg Name="AcquisitionStartReg">
+  <Address>0x05000014</Address>
+  <Length>4</Length>
+  <AccessMode>WO</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Command Name="AcquisitionStop">
+  <ToolTip>Stops the acquisition of images</ToolTip>
+  <CommandValue>1</CommandValue>
+  <pValue>AcquisitionStopReg</pValue>
+ </Command>
+
+ <IntReg Name="AcquisitionStopReg">
+  <Address>0x05000018</Address>
+  <Length>4</Length>
+  <AccessMode>WO</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Float Name="ExposureTime">
+  <ToolTip>Exposure time in microseconds</ToolTip>
+  <Description>Sets the exposure time in microseconds.</Description>
+  <pValue>ExposureTimeReg</pValue>
+  <Min>$$EXPOSURE_MIN_US$$</Min>
+  <Max>$$EXPOSURE_MAX_US$$</Max>
+  <Unit>us</Unit>
+  <Representation>Logarithmic</Representation>
+  <DisplayNotation>Fixed</DisplayNotation>
+  <DisplayPrecision>1</DisplayPrecision>
+ </Float>
+
+ <IntReg Name="ExposureTimeReg">
+  <Address>0x05000030</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Enumeration Name="ExposureAuto">
+  <ToolTip>Sets the automatic exposure control mode</ToolTip>
+  <Description>Controls whether exposure time is adjusted automatically by the device. Off means manual control via ExposureTime.</Description>
+  <EnumEntry Name="Off">
+   <Value>0</Value>
+  </EnumEntry>
+  <EnumEntry Name="Once">
+   <Value>1</Value>
+  </EnumEntry>
+  <EnumEntry Name="Continuous">
+   <Value>2</Value>
+  </EnumEntry>
+  <pValue>ExposureAutoReg</pValue>
+ </Enumeration>
+
+ <IntReg Name="ExposureAutoReg">
+  <Address>0x05000044</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Float Name="AcquisitionFrameRate">
+  <ToolTip>Acquisition frame rate in frames per second</ToolTip>
+  <Description>Controls the acquisition rate (in frames per second) at which the frames are captured.</Description>
+  <pValue>AcquisitionFrameRateReg</pValue>
+  <Min>$$FPS_MIN$$</Min>
+  <Max>$$FPS_MAX$$</Max>
+  <Unit>Hz</Unit>
+  <Representation>Linear</Representation>
+  <DisplayNotation>Fixed</DisplayNotation>
+  <DisplayPrecision>1</DisplayPrecision>
+ </Float>
+
+ <IntReg Name="AcquisitionFrameRateReg">
+  <Address>0x05000038</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Boolean Name="AcquisitionFrameRateEnable">
+  <ToolTip>Enables setting the camera's acquisition frame rate to a specified value</ToolTip>
+  <Description>When enabled, the camera limits the frame rate to the AcquisitionFrameRate value. When disabled, the camera runs at the maximum frame rate possible for the current settings.</Description>
+  <pValue>AcquisitionFrameRateEnableReg</pValue>
+ </Boolean>
+
+ <IntReg Name="AcquisitionFrameRateEnableReg">
+  <Address>0x0500003C</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Float Name="Gain">
+  <ToolTip>Analog gain in dB (0 dB = unity gain)</ToolTip>
+  <Description>Sets the analog gain in decibels. 0 dB means unity gain (no amplification). For best image quality, use small gain values and increase ExposureTime instead.</Description>
+  <pValue>GainConv</pValue>
+  <Min>$$GAIN_MIN_DB$$</Min>
+  <Max>$$GAIN_MAX_DB$$</Max>
+  <Unit>dB</Unit>
+  <Representation>Linear</Representation>
+  <DisplayNotation>Fixed</DisplayNotation>
+  <DisplayPrecision>1</DisplayPrecision>
+ </Float>
+
+ <Converter Name="GainConv">
+  <FormulaTo>FROM * 10</FormulaTo>
+  <FormulaFrom>TO / 10</FormulaFrom>
+  <pValue>GainReg</pValue>
+  <Slope>Automatic</Slope>
+ </Converter>
+
+ <IntReg Name="GainReg">
+  <Address>0x0500002C</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Float Name="BlackLevel">
+  <ToolTip>Black level offset in raw sensor units</ToolTip>
+  <Description>Controls the analog black level as an offset. Increasing this value will make the image brighter in the dark areas.</Description>
+  <pValue>BlackLevelReg</pValue>
+  <Min>$$BLACK_LEVEL_MIN$$</Min>
+  <Max>$$BLACK_LEVEL_MAX$$</Max>
+  <Representation>Linear</Representation>
+  <DisplayNotation>Fixed</DisplayNotation>
+  <DisplayPrecision>0</DisplayPrecision>
+ </Float>
+
+ <IntReg Name="BlackLevelReg">
+  <Address>0x05000040</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Boolean Name="GammaEnable">
+  <ToolTip>Enables the gamma correction</ToolTip>
+  <Description>Off gives linear output: the gamma curve is bypassed.</Description>
+  <DisplayName>Gamma Enable</DisplayName>
+  <Streamable>Yes</Streamable>
+  <pValue>GammaEnableReg</pValue>
+ </Boolean>
+
+ <IntReg Name="GammaEnableReg">
+  <Address>0x050000B0</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Enumeration Name="GammaSelector">
+  <ToolTip>Selects the type of gamma to apply</ToolTip>
+  <DisplayName>Gamma Selector</DisplayName>
+  <Streamable>Yes</Streamable>
+  <EnumEntry Name="User">
+   <ToolTip>Sets gamma to user defined curve</ToolTip>
+   <Value>1</Value>
+  </EnumEntry>
+  <EnumEntry Name="sRGB">
+   <ToolTip>Sets gamma to fixed sRGB curve</ToolTip>
+   <Value>2</Value>
+  </EnumEntry>
+  <pValue>GammaSelectorReg</pValue>
+ </Enumeration>
+
+ <IntReg Name="GammaSelectorReg">
+  <Address>0x050000B4</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Float Name="Gamma">
+  <ToolTip>This feature is used to perform gamma correction of pixel intensity.</ToolTip>
+  <Description>Used when GammaSelector is User: Output = Input^Gamma. 1.0 is linear, below 1 brightens.</Description>
+  <Streamable>Yes</Streamable>
+  <pValue>GammaConv</pValue>
+  <Min>$$GAMMA_MIN$$</Min>
+  <Max>$$GAMMA_MAX$$</Max>
+  <Representation>Linear</Representation>
+  <DisplayNotation>Fixed</DisplayNotation>
+  <DisplayPrecision>2</DisplayPrecision>
+ </Float>
+
+ <Converter Name="GammaConv">
+  <FormulaTo>FROM * 100 + 0.5</FormulaTo>
+  <FormulaFrom>TO / 100</FormulaFrom>
+  <pValue>GammaReg</pValue>
+  <Slope>Increasing</Slope>
+ </Converter>
+
+ <IntReg Name="GammaReg">
+  <Address>0x050000B8</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Enumeration Name="GainAuto">
+  <ToolTip>Sets the automatic gain control mode</ToolTip>
+  <Description>Controls whether gain is adjusted automatically by the device. Off means manual control via Gain.</Description>
+  <EnumEntry Name="Off">
+   <Value>0</Value>
+  </EnumEntry>
+  <EnumEntry Name="Once">
+   <Value>1</Value>
+  </EnumEntry>
+  <EnumEntry Name="Continuous">
+   <Value>2</Value>
+  </EnumEntry>
+  <pValue>GainAutoReg</pValue>
+ </Enumeration>
+
+ <IntReg Name="GainAutoReg">
+  <Address>0x05000048</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Enumeration Name="BalanceWhiteAuto">
+  <ToolTip>Sets the automatic white balance control mode</ToolTip>
+  <Description>Controls whether white balance is adjusted automatically by the device.</Description>
+  <EnumEntry Name="Off">
+   <Value>0</Value>
+  </EnumEntry>
+  <EnumEntry Name="Once">
+   <Value>1</Value>
+  </EnumEntry>
+  <EnumEntry Name="Continuous">
+   <Value>2</Value>
+  </EnumEntry>
+  <pValue>BalanceWhiteAutoReg</pValue>
+ </Enumeration>
+
+ <IntReg Name="BalanceWhiteAutoReg">
+  <Address>0x0500004C</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Enumeration Name="BalanceRatioSelector">
+  <ToolTip>Selects which colour channel BalanceRatio adjusts</ToolTip>
+  <EnumEntry Name="Red"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="Green"><Value>1</Value></EnumEntry>
+  <EnumEntry Name="Blue"><Value>2</Value></EnumEntry>
+  <pValue>BalanceRatioSelectorReg</pValue>
+ </Enumeration>
+ <IntReg Name="BalanceRatioSelectorReg">
+  <Address>0x05000080</Address><Length>4</Length><AccessMode>RW</AccessMode>
+  <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="BalanceRatioRaw">
+  <ToolTip>Manual white-balance gain for the selected channel, U8.8 (256 = 1.0)</ToolTip>
+  <Value>256</Value><Min>$$WB_GAIN_MIN_U88$$</Min><Max>$$WB_GAIN_MAX_U88$$</Max><Inc>1</Inc>
+  <pValue>BalanceRatioReg</pValue>
+ </Integer>
+ <IntReg Name="BalanceRatioReg">
+  <Address>0x05000084</Address><Length>4</Length><AccessMode>RW</AccessMode>
+  <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="BalanceWhiteAutoLowerLimitRaw">
+  <ToolTip>AWB min per-channel gain, U8.8 (0 = device default)</ToolTip>
+  <Value>0</Value><Min>0</Min><Max>$$AWB_GAIN_MAX_U88$$</Max><Inc>1</Inc>
+  <pValue>AwbLowerLimitReg</pValue>
+ </Integer>
+ <IntReg Name="AwbLowerLimitReg">
+  <Address>0x05000088</Address><Length>4</Length><AccessMode>RW</AccessMode>
+  <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
+ </IntReg>
+ <Integer Name="BalanceWhiteAutoUpperLimitRaw">
+  <ToolTip>AWB max per-channel gain, U8.8/16 (0 = device default)</ToolTip>
+  <Value>0</Value><Min>0</Min><Max>$$AWB_GAIN_MAX_U88$$</Max><Inc>1</Inc>
+  <pValue>AwbUpperLimitReg</pValue>
+ </Integer>
+ <IntReg Name="AwbUpperLimitReg">
+  <Address>0x0500008C</Address><Length>4</Length><AccessMode>RW</AccessMode>
+  <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
+ </IntReg>
+ <Integer Name="BalanceWhiteAutoRateRaw">
+  <ToolTip>AWB convergence rate x1000 (0 = device default)</ToolTip>
+  <Value>0</Value><Min>0</Min><Max>1000</Max><Inc>1</Inc>
+  <pValue>AwbRateReg</pValue>
+ </Integer>
+ <IntReg Name="AwbRateReg">
+  <Address>0x05000090</Address><Length>4</Length><AccessMode>RW</AccessMode>
+  <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Enumeration Name="ColorTemperaturePreset">
+  <ToolTip>Illuminant colour-temperature preset (Auto = continuous AWB)</ToolTip>
+  <EnumEntry Name="Auto"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="Tungsten3200K"><Value>3200</Value></EnumEntry>
+  <EnumEntry Name="Cool4800K"><Value>4800</Value></EnumEntry>
+  <EnumEntry Name="Daylight5600K"><Value>5600</Value></EnumEntry>
+  <EnumEntry Name="Cold6500K"><Value>6500</Value></EnumEntry>
+  <pValue>ColorTempReg</pValue>
+ </Enumeration>
+ <IntReg Name="ColorTempReg">
+  <Address>0x05000094</Address><Length>4</Length><AccessMode>RW</AccessMode>
+  <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Boolean Name="ReverseX">
+  <ToolTip>Flip the image horizontally</ToolTip>
+  <DisplayName>Reverse X</DisplayName>
+  <Visibility>Expert</Visibility>
+  <pIsLocked>TLParamsLockedAcq</pIsLocked>
+  <pValue>ReverseXReg</pValue>
+ </Boolean>
+ <IntReg Name="ReverseXReg">
+  <Address>0x05000098</Address><Length>4</Length><AccessMode>RW</AccessMode>
+  <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Boolean Name="ReverseY">
+  <ToolTip>Flip the image vertically</ToolTip>
+  <DisplayName>Reverse Y</DisplayName>
+  <Visibility>Expert</Visibility>
+  <pIsLocked>TLParamsLockedAcq</pIsLocked>
+  <pValue>ReverseYReg</pValue>
+ </Boolean>
+ <IntReg Name="ReverseYReg">
+  <Address>0x0500009C</Address><Length>4</Length><AccessMode>RW</AccessMode>
+  <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="TLParamsLocked" NameSpace="Standard">
+  <ToolTip>Transport layer parameter lock. Set to 1 by the host before acquisition start to lock image format parameters. Set to 0 after acquisition stop.</ToolTip>
+  <DisplayName>TL Params Locked</DisplayName>
+  <Visibility>Invisible</Visibility>
+  <pValue>TLParamsLockedReg</pValue>
+  <Min>0</Min><Max>1</Max>
+  <AccessMode>RW</AccessMode>
+ </Integer>
+ <IntReg Name="TLParamsLockedReg">
+  <Address>0x050000A0</Address><Length>4</Length><AccessMode>RW</AccessMode>
+  <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <IntReg Name="AcquisitionStatusReg">
+  <Address>0x050000A4</Address><Length>4</Length><AccessMode>RO</AccessMode>
+  <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <IntSwissKnife Name="TLParamsLockedAcq">
+  <pVariable Name="TLPARAMSLOCKED">TLParamsLockedReg</pVariable>
+  <pVariable Name="ACQ_ACTIVE">AcquisitionStatusReg</pVariable>
+  <Formula>(TLPARAMSLOCKED || ACQ_ACTIVE)?1:0</Formula>
+ </IntSwissKnife>
+
+ <Integer Name="PayloadSize">
+  <ToolTip>Total payload size in bytes for current settings</ToolTip>
+  <pValue>PayloadSizeReg</pValue>
+ </Integer>
+
+ <IntReg Name="PayloadSizeReg">
+  <Address>0x0500000C</Address>
+  <Length>4</Length>
+  <AccessMode>RO</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Enumeration Name="AEMeteringMode">
+  <ToolTip>Auto-exposure metering mode</ToolTip>
+  <Description>Selects how the auto-exposure algorithm meters the scene.</Description>
+  <EnumEntry Name="Average"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="CenterWeighted"><Value>1</Value></EnumEntry>
+  <EnumEntry Name="Spot"><Value>2</Value></EnumEntry>
+  <EnumEntry Name="Histogram"><Value>3</Value></EnumEntry>
+  <EnumEntry Name="ETTR"><Value>4</Value></EnumEntry>
+  <EnumEntry Name="ROI"><Value>5</Value></EnumEntry>
+  <pValue>AEMeteringModeReg</pValue>
+ </Enumeration>
+
+ <IntReg Name="AEMeteringModeReg">
+  <Address>0x05000058</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="AutoExposureTargetGreyValue">
+  <ToolTip>Auto-exposure target grey level (0 to 255)</ToolTip>
+  <Description>Target average grey level the auto-exposure algorithm drives toward.</Description>
+  <pValue>AutoExposureTargetGreyValueReg</pValue>
+  <Min>0</Min>
+  <Max>255</Max>
+ </Integer>
+
+ <IntReg Name="AutoExposureTargetGreyValueReg">
+  <Address>0x0500005C</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Float Name="AutoExposureTimeLowerLimit">
+  <ToolTip>Lower limit (us) for auto-exposure time</ToolTip>
+  <Description>Minimum exposure time the auto-exposure algorithm may use.</Description>
+  <pValue>AutoExposureTimeLowerLimitReg</pValue>
+  <Min>$$EXPOSURE_MIN_US$$</Min>
+  <Max>$$EXPOSURE_MAX_US$$</Max>
+  <Unit>us</Unit>
+  <Representation>Logarithmic</Representation>
+  <DisplayNotation>Fixed</DisplayNotation>
+  <DisplayPrecision>1</DisplayPrecision>
+ </Float>
+
+ <IntReg Name="AutoExposureTimeLowerLimitReg">
+  <Address>0x05000060</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Float Name="AutoExposureTimeUpperLimit">
+  <ToolTip>Upper limit (us) for auto-exposure time</ToolTip>
+  <Description>Maximum exposure time the auto-exposure algorithm may use.</Description>
+  <pValue>AutoExposureTimeUpperLimitReg</pValue>
+  <Min>$$EXPOSURE_MIN_US$$</Min>
+  <Max>$$EXPOSURE_MAX_US$$</Max>
+  <Unit>us</Unit>
+  <Representation>Logarithmic</Representation>
+  <DisplayNotation>Fixed</DisplayNotation>
+  <DisplayPrecision>1</DisplayPrecision>
+ </Float>
+
+ <IntReg Name="AutoExposureTimeUpperLimitReg">
+  <Address>0x05000064</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <IntSwissKnife Name="AutoFunctionAOIOffsetXMax">
+  <pVariable Name="W">WidthReg</pVariable>
+  <pVariable Name="AW">AutoFunctionAOIWidthReg</pVariable>
+  <Formula>((W &gt; AW) ? (W - AW) : 0)</Formula>
+ </IntSwissKnife>
+
+ <IntSwissKnife Name="AutoFunctionAOIOffsetYMax">
+  <pVariable Name="H">HeightReg</pVariable>
+  <pVariable Name="AH">AutoFunctionAOIHeightReg</pVariable>
+  <Formula>((H &gt; AH) ? (H - AH) : 0)</Formula>
+ </IntSwissKnife>
+
+ <Integer Name="AutoFunctionAOIOffsetX">
+  <ToolTip>AE metering AOI X offset (sensor pixels)</ToolTip>
+  <pValue>AutoFunctionAOIOffsetXReg</pValue>
+  <Min>0</Min>
+  <Inc>1</Inc>
+  <pMax>AutoFunctionAOIOffsetXMax</pMax>
+ </Integer>
+
+ <IntReg Name="AutoFunctionAOIOffsetXReg">
+  <Address>0x05000068</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="AutoFunctionAOIOffsetY">
+  <ToolTip>AE metering AOI Y offset (sensor pixels)</ToolTip>
+  <pValue>AutoFunctionAOIOffsetYReg</pValue>
+  <Min>0</Min>
+  <Inc>1</Inc>
+  <pMax>AutoFunctionAOIOffsetYMax</pMax>
+ </Integer>
+
+ <IntReg Name="AutoFunctionAOIOffsetYReg">
+  <Address>0x0500006C</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="AutoFunctionAOIWidth">
+  <ToolTip>AE metering AOI width (sensor pixels); 0 disables the ROI</ToolTip>
+  <pValue>AutoFunctionAOIWidthReg</pValue>
+  <Min>0</Min>
+  <Inc>1</Inc>
+  <pMax>WidthReg</pMax>
+ </Integer>
+
+ <IntReg Name="AutoFunctionAOIWidthReg">
+  <Address>0x05000070</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="AutoFunctionAOIHeight">
+  <ToolTip>AE metering AOI height (sensor pixels); 0 disables the ROI</ToolTip>
+  <pValue>AutoFunctionAOIHeightReg</pValue>
+  <Min>0</Min>
+  <Inc>1</Inc>
+  <pMax>HeightReg</pMax>
+ </Integer>
+
+ <IntReg Name="AutoFunctionAOIHeightReg">
+  <Address>0x05000074</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Float Name="ResultingFrameRate">
+  <ToolTip>Resulting frame rate (Hz) for the current settings</ToolTip>
+  <Description>The frame rate the device actually achieves with the current settings. Read-only.</Description>
+  <pValue>ResultingFrameRateConv</pValue>
+  <Unit>Hz</Unit>
+  <Representation>Linear</Representation>
+  <DisplayNotation>Fixed</DisplayNotation>
+  <DisplayPrecision>2</DisplayPrecision>
+ </Float>
+
+ <Converter Name="ResultingFrameRateConv">
+  <FormulaTo>FROM * 100</FormulaTo>
+  <FormulaFrom>TO / 100</FormulaFrom>
+  <pValue>ResultingFrameRateReg</pValue>
+  <Slope>Increasing</Slope>
+ </Converter>
+
+ <IntReg Name="ResultingFrameRateReg">
+  <Address>0x05000078</Address>
+  <Length>4</Length>
+  <AccessMode>RO</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Float Name="DeviceTemperature">
+  <ToolTip>Device temperature in degrees Celsius</ToolTip>
+  <Description>Current device temperature. Read-only.</Description>
+  <pValue>DeviceTemperatureConv</pValue>
+  <Unit>C</Unit>
+  <Representation>Linear</Representation>
+  <DisplayNotation>Fixed</DisplayNotation>
+  <DisplayPrecision>1</DisplayPrecision>
+ </Float>
+
+ <Converter Name="DeviceTemperatureConv">
+  <FormulaTo>FROM * 10</FormulaTo>
+  <FormulaFrom>TO / 10</FormulaFrom>
+  <pValue>DeviceTemperatureReg</pValue>
+  <Slope>Increasing</Slope>
+ </Converter>
+
+ <IntReg Name="DeviceTemperatureReg">
+  <Address>0x0500007C</Address>
+  <Length>4</Length>
+  <AccessMode>RO</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Signed</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Command Name="TimestampLatch">
+  <ToolTip>Latches the current device timestamp into TimestampLatchValue</ToolTip>
+  <CommandValue>1</CommandValue>
+  <pValue>TimestampLatchReg</pValue>
+ </Command>
+
+ <IntReg Name="TimestampLatchReg">
+  <Address>0x000001F8</Address>
+  <Length>4</Length>
+  <AccessMode>WO</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="TimestampLatchValue">
+  <ToolTip>Device timestamp captured by the last TimestampLatch, in ns since boot or the last TimestampReset</ToolTip>
+  <pValue>TimestampLatchValueReg</pValue>
+  <Unit>ns</Unit>
+ </Integer>
+
+ <IntReg Name="TimestampLatchValueReg">
+  <Address>0x000001F0</Address>
+  <Length>8</Length>
+  <AccessMode>RO</AccessMode>
+  <pPort>Device</pPort>
+  <Cachable>NoCache</Cachable>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Command Name="TimestampReset">
+  <ToolTip>Restarts the device timestamp at 0; following frames and latches count from now</ToolTip>
+  <CommandValue>1</CommandValue>
+  <pValue>TimestampResetReg</pValue>
+ </Command>
+
+ <IntReg Name="TimestampResetReg">
+  <Address>0x05000100</Address>
+  <Length>4</Length>
+  <AccessMode>WO</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Enumeration Name="DeviceLinkThroughputLimitMode">
+  <ToolTip>Enables the DeviceLinkThroughputLimit bandwidth cap</ToolTip>
+  <Description>On: the device paces its output so the payload rate stays under DeviceLinkThroughputLimit. Off: the device uses its own link ceiling.</Description>
+  <EnumEntry Name="Off">
+   <Value>0</Value>
+  </EnumEntry>
+  <EnumEntry Name="On">
+   <Value>1</Value>
+  </EnumEntry>
+  <pValue>DeviceLinkThroughputLimitModeReg</pValue>
+ </Enumeration>
+
+ <IntReg Name="DeviceLinkThroughputLimitModeReg">
+  <Address>0x050000AC</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Integer Name="DeviceLinkThroughputLimit">
+  <ToolTip>Maximum payload bandwidth the device may stream, in bytes per second</ToolTip>
+  <Description>Active when DeviceLinkThroughputLimitMode is On. The device lengthens its sensor line time so the data rate never exceeds this value; the achievable frame rate drops accordingly and ResultingFrameRate reports it.</Description>
+  <pValue>DeviceLinkThroughputLimitReg</pValue>
+  <Min>10000000</Min>
+  <Max>350000000</Max>
+  <Inc>1</Inc>
+  <Unit>Bps</Unit>
+ </Integer>
+
+ <IntReg Name="DeviceLinkThroughputLimitReg">
+  <Address>0x050000A8</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Category Name="DigitalIOControl">
+  <ToolTip>Auxiliary opto line I/O (chc5_camio_sync)</ToolTip>
+  <pFeature>LineSelector</pFeature>
+  <pFeature>LineInverter</pFeature>
+  <pFeature>LineStatus</pFeature>
+  <pFeature>LineSource</pFeature>
+  <pFeature>UserOutputValue</pFeature>
+  <pFeature>TriggerMode</pFeature>
+  <pFeature>TriggerSource</pFeature>
+  <pFeature>TriggerActivation</pFeature>
+  <pFeature>TriggerDivider</pFeature>
+  <pFeature>TriggerDelay</pFeature>
+ </Category>
+
+ <Enumeration Name="LineSelector">
+  <EnumEntry Name="Line0"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="Line1"><Value>1</Value></EnumEntry>
+  <pValue>LineSelectorReg</pValue>
+ </Enumeration>
+ <IntReg Name="LineSelectorReg"><Address>0x0500E000</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Integer Name="LineInverter"><pValue>LineInverterReg</pValue><Min>0</Min><Max>1</Max></Integer>
+ <IntReg Name="LineInverterReg"><Address>0x0500E008</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Integer Name="LineStatus"><pValue>LineStatusReg</pValue></Integer>
+ <IntReg Name="LineStatusReg"><Address>0x0500E00C</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Enumeration Name="LineSource">
+  <EnumEntry Name="Off"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="UserOutput0"><Value>1</Value></EnumEntry>
+  <EnumEntry Name="Strobe"><Value>2</Value></EnumEntry>
+  <EnumEntry Name="ExposureActive"><Value>3</Value></EnumEntry>
+  <EnumEntry Name="Status"><Value>4</Value></EnumEntry>
+  <EnumEntry Name="SyncOut"><Value>5</Value></EnumEntry>
+  <EnumEntry Name="InputPassthrough"><Value>6</Value></EnumEntry>
+  <EnumEntry Name="PtpPulse"><ToolTip>1 ms pulse on every PTP second (FPGA time base locked to PTP). PTP bitstreams only.</ToolTip><Value>7</Value></EnumEntry>
+  <pValue>LineSourceReg</pValue>
+ </Enumeration>
+ <IntReg Name="LineSourceReg"><Address>0x0500E014</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Integer Name="UserOutputValue"><pValue>UserOutputValueReg</pValue><Min>0</Min><Max>1</Max></Integer>
+ <IntReg Name="UserOutputValueReg"><Address>0x0500E018</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Enumeration Name="TriggerMode">
+  <EnumEntry Name="Off"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="On"><Value>1</Value></EnumEntry>
+  <pValue>TriggerModeReg</pValue>
+ </Enumeration>
+ <IntReg Name="TriggerModeReg"><Address>0x0500E020</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Enumeration Name="TriggerSource">
+  <EnumEntry Name="Software"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="Line0"><Value>1</Value></EnumEntry>
+  <pValue>TriggerSourceReg</pValue>
+ </Enumeration>
+ <IntReg Name="TriggerSourceReg"><Address>0x0500E024</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Enumeration Name="TriggerActivation">
+  <EnumEntry Name="RisingEdge"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="FallingEdge"><Value>1</Value></EnumEntry>
+  <EnumEntry Name="AnyEdge"><Value>2</Value></EnumEntry>
+  <EnumEntry Name="LevelHigh"><Value>3</Value></EnumEntry>
+  <pValue>TriggerActivationReg</pValue>
+ </Enumeration>
+ <IntReg Name="TriggerActivationReg"><Address>0x0500E028</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Integer Name="TriggerDivider"><pValue>TriggerDividerReg</pValue><Min>1</Min><Max>$$CAMIO_TRIGGER_DIVIDER_MAX$$</Max></Integer>
+ <IntReg Name="TriggerDividerReg"><Address>0x0500E02C</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Integer Name="TriggerDelay"><ToolTip>Trigger delay (microseconds)</ToolTip><pValue>TriggerDelayReg</pValue><Min>0</Min><Max>$$CAMIO_TRIGGER_DELAY_MAX_US$$</Max><Unit>us</Unit></Integer>
+ <IntReg Name="TriggerDelayReg"><Address>0x0500E030</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Category Name="CHC5AuxSyncControl">
+  <ToolTip>CHC5 programmable strobe + multi-camera genlock</ToolTip>
+  <pFeature>StrobeEnable</pFeature>
+  <pFeature>StrobeSource</pFeature>
+  <pFeature>StrobeDelay</pFeature>
+  <pFeature>StrobeDuration</pFeature>
+  <pFeature>StrobeMinOn</pFeature>
+  <pFeature>SyncRole</pFeature>
+  <pFeature>SyncStatus</pFeature>
+ </Category>
+
+ <Integer Name="StrobeEnable"><pValue>StrobeEnableReg</pValue><Min>0</Min><Max>1</Max></Integer>
+ <IntReg Name="StrobeEnableReg"><Address>0x0500E040</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Enumeration Name="StrobeSource">
+  <EnumEntry Name="PLGenerated"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="NativeStrobe"><Value>1</Value></EnumEntry>
+  <pValue>StrobeSourceReg</pValue>
+ </Enumeration>
+ <IntReg Name="StrobeSourceReg"><Address>0x0500E044</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Integer Name="StrobeDelay"><ToolTip>us</ToolTip><pValue>StrobeDelayReg</pValue><Min>0</Min><Max>$$CAMIO_STROBE_MAX_US$$</Max><Unit>us</Unit></Integer>
+ <IntReg Name="StrobeDelayReg"><Address>0x0500E050</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Integer Name="StrobeDuration"><ToolTip>us</ToolTip><pValue>StrobeDurationReg</pValue><Min>0</Min><Max>$$CAMIO_STROBE_MAX_US$$</Max><Unit>us</Unit></Integer>
+ <IntReg Name="StrobeDurationReg"><Address>0x0500E058</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Integer Name="StrobeMinOn"><ToolTip>us</ToolTip><pValue>StrobeMinOnReg</pValue><Min>0</Min><Max>$$CAMIO_STROBE_MAX_US$$</Max><Unit>us</Unit></Integer>
+ <IntReg Name="StrobeMinOnReg"><Address>0x0500E05C</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Enumeration Name="SyncRole">
+  <EnumEntry Name="Off"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="Master"><Value>1</Value></EnumEntry>
+  <EnumEntry Name="Slave"><Value>2</Value></EnumEntry>
+  <pValue>SyncRoleReg</pValue>
+ </Enumeration>
+ <IntReg Name="SyncRoleReg"><Address>0x0500E070</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Integer Name="SyncStatus"><pValue>SyncStatusReg</pValue></Integer>
+ <IntReg Name="SyncStatusReg"><Address>0x0500E074</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Port Name="Device">
+  <ToolTip>Port node giving access to the device</ToolTip>
+ </Port>
+
+</RegisterDescription>

@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# Config.in - Buildroot menu: chc5_webd
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+config BR2_PACKAGE_CHC5_WEBD
+	bool "chc5_webd"
+	depends on BR2_INIT_SYSTEMD
+	depends on BR2_USE_MMU
+	depends on BR2_PACKAGE_CHC5_PLATFORMD
+	depends on BR2_PACKAGE_CIVETWEB
+	depends on BR2_PACKAGE_CIVETWEB_LIB
+	select BR2_PACKAGE_LIBXCRYPT if BR2_TOOLCHAIN_USES_GLIBC
+	help
+	  CHC5 Open Camera web daemon (civetweb-based HTTP/WS UI on port 8080).
+
+comment "chc5_webd needs systemd, chc5_platformd, and civetweb (lib)"
+	depends on !BR2_INIT_SYSTEMD || !BR2_PACKAGE_CHC5_PLATFORMD || \
+	           !BR2_PACKAGE_CIVETWEB || !BR2_PACKAGE_CIVETWEB_LIB

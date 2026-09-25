@@ -1,0 +1,127 @@
+{
+  "manifest_kind": "sensor_v1",
+  "manifest_version": 1,
+  "manifest": {
+    "version": "0.4.2",
+    "vendor": "OmniVision",
+    "model": "OX08B40",
+    "description": "OX08B40, 4 lanes, PWL 12-bit, Xilinx colour pipeline (ST30)"
+  },
+  "kernel": {
+    "module": "ox08b40",
+    "lanes": 4
+  },
+  "sensor": {
+    "lanes": "4",
+    "lanes_wired": 4,
+    "width": 3840,
+    "height": 2160,
+    "width_inc": 16,
+    "height_inc": 8,
+    "width_min": 608,
+    "height_min": 480,
+    "color_filter": "BayerBG",
+    "bit_depth": 12,
+    "chroma": "color",
+    "offset_x_inc": 8,
+    "offset_y_inc": 8
+  },
+  "orientation": {
+    "flip_h": 1
+  },
+  "exposure": {
+    "min_us": 60,
+    "max_us": 1000000
+  },
+  "gain": {
+    "min_db_x10": 0,
+    "max_db_x10": 238
+  },
+  "black_level": {
+    "min": 0,
+    "max": 64
+  },
+  "fps": {
+    "min_mhz": 100,
+    "max_mhz": 4000000
+  },
+  "binning": {
+    "max_h": 1,
+    "max_v": 1
+  },
+  "decimation": {
+    "max_h": 1,
+    "max_v": 1
+  },
+  "camio": {
+    "has_xvs": 0,
+    "xvs_out": 0,
+    "xvs_in": 0,
+    "has_xhs": 0,
+    "has_xtrig": 0,
+    "strobe": "none",
+    "shutter": "rolling",
+    "role": "i2c",
+    "trigger": "none"
+  },
+  "gamma": {
+    "x10": 5
+  },
+  "test_patterns": [
+    {
+      "name": "Off",
+      "value": 0
+    },
+    {
+      "name": "ColourBarType1",
+      "value": 1
+    },
+    {
+      "name": "ColourBarType2",
+      "value": 2
+    },
+    {
+      "name": "ColourBarType3",
+      "value": 3
+    },
+    {
+      "name": "ColourBarType4",
+      "value": 4
+    }
+  ],
+  "pixel_formats": [
+    {
+      "name": "Mono8",
+      "pfnc": 17301505
+    },
+    {
+      "name": "BayerBG8",
+      "pfnc": 17301515
+    },
+    {
+      "name": "BayerBG12",
+      "pfnc": 17825811
+    },
+    {
+      "name": "BayerBG12p",
+      "pfnc": 17563731
+    },
+    {
+      "name": "YUV422_8",
+      "pfnc": 34603058
+    },
+    {
+      "name": "YCbCr422_8",
+      "pfnc": 34603067
+    },
+    {
+      "name": "RGB565p",
+      "pfnc": 34603061
+    },
+    {
+      "name": "BGR8",
+      "pfnc": 35127317
+    }
+  ],
+  "bayer_order": "BGGR"
+}

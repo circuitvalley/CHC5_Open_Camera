@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5_platformd.service - platform daemon
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 Platform Manager (FPGA bitstream, DT overlays, system config)
+Documentation=https://github.com/circuitvalley/CHC5_Open_Camera
+DefaultDependencies=no
+After=sysinit.target local-fs.target
+Before=basic.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=notify
+
+ExecStartPre=/usr/bin/chc5_platformd -r
+ExecStart=/usr/bin/chc5_platformd
+ExecStopPost=/usr/bin/chc5_platformd -r
+NotifyAccess=main
+
+RuntimeDirectory=chc5_platformd
+
+StateDirectory=chc5_platformd
+StateDirectoryMode=0755
+
+Restart=on-failure
+RestartSec=2
+StartLimitInterval=60
+StartLimitBurst=5
+
+WatchdogSec=20
+WatchdogSignal=SIGABRT
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=platformd
+
+LimitNOFILE=4096
+
+NoNewPrivileges=true
+AmbientCapabilities=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_TIME
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_TIME CAP_SYS_MODULE
+
+[Install]
+WantedBy=basic.target

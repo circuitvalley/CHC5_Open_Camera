@@ -1,0 +1,154 @@
+{
+  "manifest_kind": "sensor_v1",
+  "manifest_version": 1,
+  "manifest": {
+    "version": "1.4.0",
+    "description": "IMX585 mono, 4 lanes, 12-bit, Xilinx mono pipeline (ST31)",
+    "vendor": "Sony",
+    "model": "IMX585"
+  },
+  "kernel": {
+    "module": "imx585",
+    "lanes": 4
+  },
+  "sensor": {
+    "lanes": "2,4",
+    "lanes_wired": 4,
+    "width": 3840,
+    "height": 2160,
+    "width_inc": 16,
+    "height_inc": 4,
+    "offset_x_inc": 2,
+    "offset_y_inc": 4,
+    "color_filter": "None",
+    "bit_depth": 12,
+    "chroma": "mono",
+    "width_min": 64,
+    "height_min": 240
+  },
+  "exposure": {
+    "min_us": 30,
+    "max_us": 1000000
+  },
+  "gain": {
+    "min_db_x10": 0,
+    "max_db_x10": 720,
+    "ref": 1024,
+    "reg_max": 240,
+    "mode": "linear"
+  },
+  "black_level": {
+    "min": 0,
+    "max": 200
+  },
+  "fps": {
+    "min_mhz": 100,
+    "max_mhz": 4000000
+  },
+  "binning": {
+    "max_h": 2,
+    "max_v": 2,
+    "width_min": 64,
+    "height_min": 120
+  },
+  "decimation": {
+    "max_h": 1,
+    "max_v": 1
+  },
+  "camio": {
+    "has_xvs": 1,
+    "xvs_out": 1,
+    "xvs_in": 1,
+    "has_xhs": 1,
+    "has_xtrig": 0,
+    "strobe": "none",
+    "shutter": "rolling",
+    "role": "i2c",
+    "trigger": "xvs"
+  },
+  "pixel_formats": [
+    {
+      "name": "Mono8",
+      "pfnc": 17301505
+    },
+    {
+      "name": "Mono12",
+      "pfnc": 17825797
+    },
+    {
+      "name": "Mono12p",
+      "pfnc": 17563719
+    },
+    {
+      "name": "YUV422_8",
+      "pfnc": 34603058
+    },
+    {
+      "name": "YCbCr422_8",
+      "pfnc": 34603067
+    },
+    {
+      "name": "RGB565p",
+      "pfnc": 34603061
+    },
+    {
+      "name": "BGR8",
+      "pfnc": 35127317
+    }
+  ],
+  "uvc_modes": [
+    {
+      "w": 640,
+      "h": 480,
+      "fps": 60,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 1280,
+      "h": 720,
+      "fps": 40,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 1920,
+      "h": 1080,
+      "fps": 30,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 3840,
+      "h": 2160,
+      "fps": 21,
+      "src": "full"
+    }
+  ],
+  "gamma": {
+    "x10": 5
+  },
+  "test_patterns": [
+    {
+      "name": "Off"
+    },
+    {
+      "name": "All000h"
+    },
+    {
+      "name": "AllFFFh"
+    },
+    {
+      "name": "All555h"
+    },
+    {
+      "name": "AllAAAh"
+    },
+    {
+      "name": "HorizontalColorBars"
+    },
+    {
+      "name": "VerticalColorBars"
+    }
+  ]
+}

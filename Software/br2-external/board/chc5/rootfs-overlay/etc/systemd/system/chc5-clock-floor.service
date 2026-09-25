@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-clock-floor.service - lift the system clock to a sane floor at boot
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 build-date clock floor (no RTC; keeps RAUC cert validity)
+DefaultDependencies=no
+After=local-fs.target chc5-rwlayers.service
+RequiresMountsFor=/var
+Before=sysinit.target time-set.target chc5-provision.service chc5_platformd.service chc5_webd.service
+ConditionPathExists=/etc/chc5-clock-default
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/chc5/chc5-clock-floor.sh
+
+[Install]
+WantedBy=sysinit.target

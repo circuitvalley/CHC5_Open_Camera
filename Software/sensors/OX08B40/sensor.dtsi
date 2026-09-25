@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: CC-BY-NC-ND-4.0
+/*
+ * sensor.dtsi - OX08B40 sensor node
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+
+#address-cells = <0x01>;
+#size-cells = <0x00>;
+
+		ox08b40: sensor@36 {
+			compatible = "ovti,ox08b40";
+			reg = <0x36>;
+			clocks = <&clk_24m>;
+			avdd-supply  = <&ox08b40_avdd>;
+			dovdd-supply = <&ox08b40_dovdd>;
+			dvdd-supply  = <&ox08b40_dvdd>;
+			link-frequencies = /bits/ 64 <480000000>;
+
+			port {
+				direction = "input";
+			     sensor_out: endpoint {
+				remote-endpoint = <&csiss_in>;
+				data-lanes = <1 2 3 4>;
+				link-frequencies = /bits/ 64 <480000000>;
+				};
+			};
+		};

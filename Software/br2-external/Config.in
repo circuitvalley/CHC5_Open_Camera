@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# Config.in - CHC5 Buildroot menu
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+menu "CHC5 Open Camera"
+
+source "$BR2_EXTERNAL_CHC5_PATH/package/chc5_platformd/Config.in"
+source "$BR2_EXTERNAL_CHC5_PATH/package/chc5_webd/Config.in"
+source "$BR2_EXTERNAL_CHC5_PATH/package/camcfgd/Config.in"
+source "$BR2_EXTERNAL_CHC5_PATH/package/gvcp_server/Config.in"
+
+endmenu

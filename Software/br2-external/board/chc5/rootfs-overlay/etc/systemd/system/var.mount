@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# var.mount - data partition mount
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 /var (ext4 on the SD data partition)
+Requires=chc5-var-prepare.service
+After=chc5-var-prepare.service
+DefaultDependencies=no
+Before=local-fs.target
+Conflicts=umount.target
+Before=umount.target
+
+[Mount]
+What=/dev/mmcblk0p8
+Where=/var
+Type=ext4
+Options=defaults,noatime
+
+[Install]
+WantedBy=local-fs.target

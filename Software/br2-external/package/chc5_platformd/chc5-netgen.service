@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-netgen.service - generate the network configuration
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 networkd config generator (network.json -> .network)
+Documentation=https://github.com/circuitvalley/CHC5_Open_Camera
+DefaultDependencies=no
+
+After=local-fs.target
+Before=systemd-networkd.service
+Wants=network-pre.target
+
+RequiresMountsFor=/var/lib/chc5_platformd
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+RuntimeDirectory=systemd/network
+RuntimeDirectoryPreserve=yes
+RuntimeDirectoryMode=0755
+
+ExecStart=/usr/bin/chc5_platformd -N
+
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=chc5-netgen
+
+[Install]
+WantedBy=network-pre.target

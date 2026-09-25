@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# camcfgd.service - camera configuration daemon
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=Camera configuration daemon (V4L2 pipeline, AE; stateless)
+Documentation=https://github.com/circuitvalley/CHC5_Open_Camera
+After=chc5_platformd.service
+Requires=chc5_platformd.service
+After=chc5-sensor-load.service
+Wants=chc5-sensor-load.service
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/camcfgd
+NotifyAccess=main
+RuntimeDirectory=camcfgd
+
+Restart=on-failure
+RestartSec=2
+StartLimitInterval=60
+StartLimitBurst=5
+
+WatchdogSec=10
+WatchdogSignal=SIGABRT
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=camcfgd
+
+LimitNOFILE=4096
+
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

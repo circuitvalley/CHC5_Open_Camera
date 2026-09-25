@@ -1,0 +1,151 @@
+{
+  "manifest_kind": "sensor_v1",
+  "manifest_version": 1,
+  "manifest": {
+    "version": "2.9.0",
+    "description": "IMX294, 4 lanes, 12-bit, Xilinx colour pipeline (ST30)",
+    "vendor": "Sony",
+    "model": "IMX294"
+  },
+  "kernel": {
+    "module": "imx294",
+    "lanes": 4
+  },
+  "sensor": {
+    "width": 4096,
+    "height": 2160,
+    "width_inc": 16,
+    "height_inc": 8,
+    "offset_x_inc": 12,
+    "color_filter": "BayerRG",
+    "bit_depth": 12,
+    "lanes": "4",
+    "lanes_wired": 4
+  },
+  "exposure": {
+    "min_us": 10,
+    "max_us": 1000000
+  },
+  "gain": {
+    "min_db_x10": 0,
+    "max_db_x10": 270,
+    "reg_max": 65535,
+    "ref": 2048
+  },
+  "black_level": {
+    "min": 0,
+    "max": 200
+  },
+  "fps": {
+    "min_mhz": 100,
+    "max_mhz": 4000000
+  },
+  "binning": {
+    "max_h": 2,
+    "max_v": 2,
+    "width": 2016,
+    "height": 1080,
+    "width_min": 144,
+    "height_min": 64,
+    "width_inc": 48,
+    "offset_x_inc": 6
+  },
+  "decimation": {
+    "max_h": 4,
+    "max_v": 4
+  },
+  "pixel_formats": [
+    {
+      "name": "Mono8",
+      "pfnc": 17301505
+    },
+    {
+      "name": "BayerRG8",
+      "pfnc": 17301513
+    },
+    {
+      "name": "BayerRG12",
+      "pfnc": 17825809
+    },
+    {
+      "name": "BayerRG12p",
+      "pfnc": 17563737
+    },
+    {
+      "name": "YUV422_8",
+      "pfnc": 34603058
+    },
+    {
+      "name": "YCbCr422_8",
+      "pfnc": 34603067
+    },
+    {
+      "name": "RGB565p",
+      "pfnc": 34603061
+    },
+    {
+      "name": "BGR8",
+      "pfnc": 35127317
+    }
+  ],
+  "uvc_modes": [
+    {
+      "w": 624,
+      "h": 480,
+      "fps": 99,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 1248,
+      "h": 720,
+      "fps": 30,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 1920,
+      "h": 1080,
+      "fps": 30,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 3840,
+      "h": 2160,
+      "fps": 15,
+      "src": "crop"
+    },
+    {
+      "w": 4096,
+      "h": 2160,
+      "fps": 15,
+      "src": "full"
+    }
+  ],
+  "ccm": "5312 -853 -363 0 -1337 6109 -676 0 -53 -1617 5766 0",
+  "color_temp": {
+    "k3200": {
+      "r_x100": 129,
+      "b_x100": 234
+    },
+    "k4800": {
+      "r_x100": 164,
+      "b_x100": 181
+    },
+    "k5600": {
+      "r_x100": 180,
+      "b_x100": 166
+    },
+    "k6500": {
+      "r_x100": 194,
+      "b_x100": 154
+    }
+  },
+  "ccm_ct": {
+    "k3200": "5434 -393 -945 0 -1976 6865 -793 0 160 -2597 6533 0",
+    "k4800": "5511 -798 -617 0 -1504 6416 -816 0 48 -1963 6011 0",
+    "k5600": "5312 -853 -363 0 -1337 6109 -676 0 -53 -1617 5766 0",
+    "k6500": "5147 -899 -152 0 -1198 5854 -560 0 -137 -1329 5562 0"
+  }
+}

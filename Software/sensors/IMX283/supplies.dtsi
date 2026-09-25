@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: CC-BY-NC-ND-4.0
+/*
+ * supplies.dtsi - IMX283 clock and power supplies
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+
+clk_24m: clock_24m {
+	compatible = "fixed-clock";
+	#clock-cells = <0x00>;
+	clock-frequency = <0x16e3600>;
+};
+
+imx283_vana: fixedregulator@3 {
+	compatible = "regulator-fixed";
+	regulator-name = "imx283_vana";
+	regulator-min-microvolt = <0x2c4020>;
+	regulator-max-microvolt = <0x2c4020>;
+	enable-active-high;
+};
+
+imx283_vdig: fixedregulator@4 {
+	compatible = "regulator-fixed";
+	regulator-name = "imx283_vdig";
+	regulator-min-microvolt = <0x124f80>;
+	regulator-max-microvolt = <0x124f80>;
+};
+
+imx283_vddl: fixedregulator@5 {
+	compatible = "regulator-fixed";
+	regulator-name = "imx283_vddl";
+	regulator-min-microvolt = <0x1b7740>;
+	regulator-max-microvolt = <0x1b7740>;
+};

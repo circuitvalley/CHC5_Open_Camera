@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-mark-good.service - mark the booted slot good
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 RAUC mark-good (confirm A/B boot once the control daemons are up)
+ConditionPathExists=/etc/rauc/system.conf
+After=chc5_platformd.service chc5_webd.service network-online.target
+Wants=network-online.target
+RequiresMountsFor=/boot
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/chc5/rauc-mark-good.sh
+
+[Install]
+WantedBy=multi-user.target

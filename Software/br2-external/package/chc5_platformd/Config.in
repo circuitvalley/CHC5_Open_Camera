@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# Config.in - Buildroot menu: chc5_platformd
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+config BR2_PACKAGE_CHC5_PLATFORMD
+	bool "chc5_platformd"
+	depends on BR2_INIT_SYSTEMD
+	depends on BR2_USE_MMU
+	select BR2_PACKAGE_XZ
+	select BR2_PACKAGE_IPUTILS
+	select BR2_PACKAGE_IPUTILS_ARPING
+	select BR2_PACKAGE_IPROUTE2
+	help
+	  CHC5 Open Camera platform daemon.
+
+if BR2_PACKAGE_CHC5_PLATFORMD
+
+comment "--- Factory baseline (per camera model) ---"
+
+config BR2_PACKAGE_CHC5_PLATFORMD_FACTORY_BITSTREAM
+	string "Factory bitstream archive (basename in firmware_store/)"
+	default ""
+	help
+	  Factory bitstream archive for this camera model.
+
+config BR2_PACKAGE_CHC5_PLATFORMD_FACTORY_SENSOR
+	string "Factory sensor archive (basename in firmware_store/)"
+	default ""
+	help
+	  Factory sensor archive for this camera model.
+
+config BR2_PACKAGE_CHC5_PLATFORMD_FACTORY_USB_FW
+	string "Factory USB-FW archive (basename in firmware_store/)"
+	default ""
+	help
+	  Factory USB firmware archive for this camera model.
+
+config BR2_PACKAGE_CHC5_PLATFORMD_FACTORY_NETNAME
+	string "Factory GigE Vision user-defined name"
+	default "chc5-cam"
+	help
+	  Factory network name for this camera model.
+
+endif
+
+comment "chc5_platformd needs systemd"
+	depends on !BR2_INIT_SYSTEMD

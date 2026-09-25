@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5_webd.service - web interface daemon
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 Web Daemon (civetweb-based HTTP/WS UI)
+Documentation=https://github.com/circuitvalley/CHC5_Open_Camera
+After=chc5_platformd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/chc5_webd
+RuntimeDirectory=chc5_webd
+
+Restart=always
+RestartSec=2
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=chc5_webd
+
+LimitNOFILE=4096
+
+NoNewPrivileges=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

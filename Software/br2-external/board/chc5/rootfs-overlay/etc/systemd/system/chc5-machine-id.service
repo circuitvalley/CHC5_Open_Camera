@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-machine-id.service - keep the machine-id across boots
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 persist machine-id across boots (read-only root)
+DefaultDependencies=no
+After=var.mount local-fs.target
+RequiresMountsFor=/var
+Before=systemd-networkd.service systemd-networkd-wait-online.service dbus.service sysinit.target
+ConditionPathIsReadWrite=!/
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/chc5/machine-id-persist.sh
+
+[Install]
+WantedBy=sysinit.target

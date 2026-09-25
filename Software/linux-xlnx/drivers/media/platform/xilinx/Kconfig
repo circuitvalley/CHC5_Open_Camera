@@ -233,7 +233,7 @@ config VIDEO_XILINX_AXI4S_SUBSETCONV
 	  If unsure, choose N
 
 config VIDEO_CHC5_VIPP
-	tristate "CHC5 VIPP Fake Pipeline"
+	tristate "CHC5 video pipeline"
 	depends on VIDEO_DEV
 	select VIDEOBUF2_VMALLOC
 	select VIDEOBUF2_MEMOPS
@@ -241,43 +241,43 @@ config VIDEO_CHC5_VIPP
 	  CHC5 video pipeline.
 
 config VIDEO_CHC5_AXISVT
-	tristate "CHC5 AXIS to Video Timing"
+	tristate "CHC5 video timing"
 	depends on VIDEO_DEV
 	help
 	  CHC5 video timing.
 
 config VIDEO_CHC5_BLKC
-	tristate "CHC5 AXIS Video Black Level Corrector Module"
+	tristate "CHC5 black level corrector"
 	depends on VIDEO_DEV
 	help
 	  CHC5 black level corrector.
 
 config VIDEO_CHC5_PPCK
-	tristate "CHC5 AXIS Pixel Re-Packer Module"
+	tristate "CHC5 pixel packer"
 	depends on VIDEO_DEV
 	help
 	  CHC5 pixel packer.
 
 config VIDEO_CHC5_VDMA_TRIPLE
-	tristate "CHC5 VDMA Triple Driver"
+	tristate "CHC5 VDMA triple buffer"
 	depends on VIDEO_DEV
 	help
 	  CHC5 VDMA triple buffer.
 
 config VIDEO_CHC5_CROP
-	tristate "CHC5 Programmable Crop"
+	tristate "CHC5 crop"
 	depends on VIDEO_DEV
 	help
 	  CHC5 crop.
 
 config VIDEO_CHC5_XVSUB
-	tristate "CHC5 Video Sub Sampler"
+	tristate "CHC5 video subsystem"
 	depends on VIDEO_DEV
 	help
 	  CHC5 video subsystem.
 
 config VIDEO_CHC5_CAMIO
-	tristate "CHC5 Camera Aux I/O + Sync Module"
+	tristate "CHC5 camera I/O and sync"
 	depends on VIDEO_DEV
 	depends on PTP_1588_CLOCK_OPTIONAL
 	help

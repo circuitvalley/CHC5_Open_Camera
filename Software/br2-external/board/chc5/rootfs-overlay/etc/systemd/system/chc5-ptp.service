@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-ptp.service - PTP mode
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 PTP mode (ptp4l; GigE frame timestamps in PTP time)
+Documentation=file:/usr/lib/chc5/chc5-ptp.sh
+After=network.target
+Wants=network.target
+Wants=chc5-ptp-phc2sys.service
+
+[Service]
+Type=simple
+RuntimeDirectory=chc5-ptp
+RuntimeDirectoryPreserve=restart
+ExecStart=/usr/lib/chc5/chc5-ptp.sh
+ExecStopPost=/usr/lib/chc5/chc5-ptp.sh stop
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-boot-image.service - check which boot image was used
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 boot-image check (which BOOT.BIN copy the BootROM used; warn on golden)
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target chc5_webd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/chc5/boot-image-check.sh
+
+[Install]
+WantedBy=sysinit.target

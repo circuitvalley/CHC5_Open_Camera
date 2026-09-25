@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# gvcp_server.service - GigE Vision control server
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=GigE Vision control server
+Documentation=https://github.com/circuitvalley/CHC5_Open_Camera
+After=camcfgd.service chc5_platformd.service network-online.target
+Wants=network-online.target
+Requires=camcfgd.service
+PartOf=camcfgd.service
+ConditionPathExists=/dev/gvsp0
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/gvcp_server -D /dev/gvsp0 -x /var/lib/chc5_platformd/sensors/active.device.xml
+NotifyAccess=main
+RuntimeDirectory=gvcp_server
+
+Restart=on-failure
+RestartSec=2
+StartLimitInterval=60
+StartLimitBurst=5
+
+WatchdogSec=10
+WatchdogSignal=SIGABRT
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gvcp
+
+LimitNOFILE=4096
+
+NoNewPrivileges=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target

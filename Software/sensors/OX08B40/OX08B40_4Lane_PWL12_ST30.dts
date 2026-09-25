@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: CC-BY-NC-ND-4.0
+/*
+ * OX08B40_4Lane_PWL12_ST30.dts - OX08B40, 4 lanes, PWL 12-bit, Xilinx colour pipeline (ST30) overlay
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+
+/dts-v1/;
+/plugin/;
+
+#define CHC5_BAYER_FORMAT	0x2c
+#define CHC5_DATA_LANES	1 2 3 4
+#define CHC5_BAYER_WIDTH	12
+
+/ {
+	fragment@0 {
+		target = <&fpga_full>;
+		#address-cells = <0x01>;
+		#size-cells = <0x01>;
+
+		__overlay__ {
+			#address-cells = <0x01>;
+			#size-cells = <0x01>;
+			firmware-name = "chc5-active-bitstream.bit.bin";
+		};
+	};
+
+	fragment@1 {
+		target = <&amba>;
+		#address-cells = <0x01>;
+		#size-cells = <0x01>;
+
+		__overlay__ {
+#include "supplies.dtsi"
+#include "../fabric/colour_xilinx.dtsi"
+		};
+	};
+
+	fragment@2 {
+		target = <&i2c0>;
+
+		__overlay__ {
+#include "sensor.dtsi"
+		};
+	};
+};

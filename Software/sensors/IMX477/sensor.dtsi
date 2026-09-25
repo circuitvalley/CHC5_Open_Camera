@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: CC-BY-NC-ND-4.0
+/*
+ * sensor.dtsi - IMX477 sensor node
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+
+#address-cells = <0x01>;
+#size-cells = <0x00>;
+
+imx477: sensor@1a {
+	compatible = "sony,imx477";
+	reg = <0x1a>;
+	clocks = <&clk_24m>;
+	VANA-supply = <&imx477_vana>;
+	VDIG-supply = <&imx477_vdig>;
+	VDDL-supply = <&imx477_vddl>;
+	link-frequencies = <0x00 0x1ad27480>;
+
+	port {
+		direction = "input";
+
+		sensor_out: endpoint {
+			remote-endpoint = <&csiss_in>;
+			data-lanes = <CHC5_DATA_LANES>;
+			link-frequencies = <0x00 0x1ad27480>;
+		};
+	};
+};

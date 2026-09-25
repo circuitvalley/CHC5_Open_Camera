@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: CC-BY-NC-ND-4.0
+/*
+ * sensor.dtsi - IMX678 sensor node
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+
+#address-cells = <0x01>;
+#size-cells = <0x00>;
+
+imx678: sensor@1a {
+	compatible = "sony,imx678";
+	reg = <0x1a>;
+	sony,hcg-level = <0x1a>;
+	clocks = <&clk_37m125>;
+	VANA-supply = <&imx678_vana>;
+	VDIG-supply = <&imx678_vdig>;
+	VDDL-supply = <&imx678_vddl>;
+	link-frequencies = <0x00 0x1a8dca60>;
+
+	port {
+		direction = "input";
+
+		sensor_out: endpoint {
+			remote-endpoint = <&csiss_in>;
+			data-lanes = <CHC5_DATA_LANES>;
+			link-frequencies = <0x00 0x1a8dca60>;
+		};
+	};
+};

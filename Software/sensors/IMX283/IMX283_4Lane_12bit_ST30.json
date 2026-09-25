@@ -1,0 +1,149 @@
+{
+  "manifest_kind": "sensor_v1",
+  "manifest_version": 1,
+  "manifest": {
+    "version": "1.8.0",
+    "description": "IMX283, 4 lanes, 12-bit, Xilinx colour pipeline (ST30)",
+    "vendor": "Sony",
+    "model": "IMX283"
+  },
+  "kernel": {
+    "module": "imx283",
+    "lanes": 4
+  },
+  "sensor": {
+    "lanes": "4",
+    "lanes_wired": 4,
+    "width": 5472,
+    "height": 3648,
+    "width_inc": 48,
+    "height_inc": 4,
+    "color_filter": "BayerRG",
+    "bit_depth": 12,
+    "chroma": "color",
+    "width_min": 336,
+    "height_min": 1864,
+    "offset_x_inc": 12,
+    "offset_y_inc": 4
+  },
+  "exposure": {
+    "min_us": 100,
+    "max_us": 1000000
+  },
+  "gain": {
+    "min_db_x10": 0,
+    "max_db_x10": 450,
+    "ref": 2048,
+    "reg_max": 1957,
+    "mode": "sony_ref"
+  },
+  "black_level": {
+    "min": 0,
+    "max": 200
+  },
+  "fps": {
+    "min_mhz": 39,
+    "max_mhz": 4000000
+  },
+  "binning": {
+    "max_h": 2,
+    "max_v": 2,
+    "width": 2736,
+    "height": 1824,
+    "width_min": 432,
+    "height_min": 928
+  },
+  "decimation": {
+    "max_h": 1,
+    "max_v": 1
+  },
+  "camio": {
+    "has_xvs": 1,
+    "xvs_out": 1,
+    "xvs_in": 0,
+    "has_xhs": 1,
+    "has_xtrig": 0,
+    "strobe": "none",
+    "shutter": "rolling",
+    "role": "i2c",
+    "trigger": "xvs"
+  },
+  "pixel_formats": [
+    {
+      "name": "Mono8",
+      "pfnc": 17301505
+    },
+    {
+      "name": "BayerRG8",
+      "pfnc": 17301513
+    },
+    {
+      "name": "BayerRG12",
+      "pfnc": 17825809
+    },
+    {
+      "name": "BayerRG12p",
+      "pfnc": 17563737
+    },
+    {
+      "name": "YUV422_8",
+      "pfnc": 34603058
+    },
+    {
+      "name": "YCbCr422_8",
+      "pfnc": 34603067
+    },
+    {
+      "name": "RGB565p",
+      "pfnc": 34603061
+    },
+    {
+      "name": "BGR8",
+      "pfnc": 35127317
+    }
+  ],
+  "uvc_modes": [
+    {
+      "w": 1920,
+      "h": 1080,
+      "fps": 20,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 3840,
+      "h": 2160,
+      "fps": 15,
+      "src": "crop"
+    },
+    {
+      "w": 5568,
+      "h": 3664,
+      "fps": 7,
+      "src": "full"
+    }
+  ],
+  "test_patterns": [
+    {
+      "name": "Off"
+    },
+    {
+      "name": "All000h"
+    },
+    {
+      "name": "AllFFFh"
+    },
+    {
+      "name": "All555h"
+    },
+    {
+      "name": "AllAAAh"
+    },
+    {
+      "name": "HorizontalColorBars"
+    },
+    {
+      "name": "VerticalColorBars"
+    }
+  ]
+}

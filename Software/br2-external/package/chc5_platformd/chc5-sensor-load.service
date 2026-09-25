@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-sensor-load.service - load the active sensor at boot
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 -- Apply staged sensor overlay at boot
+DefaultDependencies=no
+After=systemd-modules-load.service
+After=local-fs.target
+After=sys-kernel-config.mount
+After=chc5_platformd.service
+Wants=chc5_platformd.service
+ConditionPathExists=/var/lib/chc5_platformd/sensors/.current
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/chc5-sensor-load
+StandardOutput=journal
+StandardError=journal
+
+TimeoutStartSec=15s
+
+[Install]
+WantedBy=basic.target

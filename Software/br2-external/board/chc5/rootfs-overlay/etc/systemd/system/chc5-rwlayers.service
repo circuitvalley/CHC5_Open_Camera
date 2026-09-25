@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-rwlayers.service - writable layers on the read-only root
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 read-only-root writable layers (/lib/firmware, /lib/modules, /etc/chc5)
+DefaultDependencies=no
+After=var.mount local-fs.target
+RequiresMountsFor=/var
+Before=chc5-sensor-load.service chc5_platformd.service chc5_webd.service sysinit.target
+ConditionPathIsReadWrite=!/
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/chc5/ro-root-rwlayers.sh
+
+[Install]
+WantedBy=sysinit.target

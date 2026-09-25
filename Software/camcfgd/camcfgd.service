@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# camcfgd.service - systemd unit for the camera configuration daemon
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=Camera Configuration Manager Daemon (CHC5)
+After=network-pre.target systemd-modules-load.service
+Before=network.target
+Wants=network-pre.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/camcfgd
+Restart=on-failure
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+User=root
+
+ProtectSystem=strict
+ReadWritePaths=/var/run
+PrivateTmp=yes
+NoNewPrivileges=no
+
+DeviceAllow=/dev/media0 rw
+DeviceAllow=/dev/video* rw
+DeviceAllow=/dev/v4l-subdev* rw
+DeviceAllow=/dev/mem rw
+
+[Install]
+WantedBy=multi-user.target

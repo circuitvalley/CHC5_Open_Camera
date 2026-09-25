@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-factory-check.service - factory reset button check at boot
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 factory-reset button probe (commit-on-release)
+Documentation=https://github.com/circuitvalley/CHC5_Open_Camera
+DefaultDependencies=no
+
+After=local-fs.target
+After=chc5-rwlayers.service
+Before=chc5-netgen.service chc5_platformd.service systemd-networkd.service network-pre.target
+Wants=network-pre.target
+
+RequiresMountsFor=/var/lib/chc5_platformd /etc
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+ExecStart=/usr/bin/chc5_platformd -F
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=chc5-factory-check
+
+[Install]
+WantedBy=basic.target

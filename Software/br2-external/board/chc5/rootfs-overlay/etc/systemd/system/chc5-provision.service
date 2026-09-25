@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-provision.service - first-boot provisioning
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 first-boot per-unit provisioning (identity + per-unit admin password)
+DefaultDependencies=no
+After=chc5-rwlayers.service systemd-machine-id-commit.service
+Requires=chc5-rwlayers.service
+Before=chc5_webd.service chc5_platformd.service
+ConditionPathExists=!/var/lib/chc5-rw/.provisioned
+RequiresMountsFor=/var
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/chc5/chc5-provision.sh
+
+[Install]
+WantedBy=multi-user.target

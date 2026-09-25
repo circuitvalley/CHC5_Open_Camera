@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: CC-BY-NC-ND-4.0
+/*
+ * supplies.dtsi - IMX678 clock and power supplies
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+
+clk_37m125: clock_37m125 {
+	compatible = "fixed-clock";
+	#clock-cells = <0x00>;
+	clock-frequency = <0x2367b88>;
+};
+
+imx678_vana: fixedregulator@3 {
+	compatible = "regulator-fixed";
+	regulator-name = "imx678_vana";
+	regulator-min-microvolt = <0x325aa0>;
+	regulator-max-microvolt = <0x325aa0>;
+	enable-active-high;
+};
+
+imx678_vdig: fixedregulator@4 {
+	compatible = "regulator-fixed";
+	regulator-name = "imx678_vdig";
+	regulator-min-microvolt = <0x10c8e0>;
+	regulator-max-microvolt = <0x10c8e0>;
+};
+
+imx678_vddl: fixedregulator@5 {
+	compatible = "regulator-fixed";
+	regulator-name = "imx678_vddl";
+	regulator-min-microvolt = <0x1b7740>;
+	regulator-max-microvolt = <0x1b7740>;
+};

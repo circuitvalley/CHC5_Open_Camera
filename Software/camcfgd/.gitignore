@@ -1,0 +1,10 @@
+*.o
+camcfgd
+libcamcfgd_client.a
+version_gen.h
+version_gen.h.tmp
+build/
+.settings/
+.settings
+
+*.d

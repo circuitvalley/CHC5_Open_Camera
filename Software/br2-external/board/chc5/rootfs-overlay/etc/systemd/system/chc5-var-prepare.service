@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-var-prepare.service - prepare and mount the data partition
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 prepare + mount /var (SD data partition; re-created on a factory reset's request, RAM if it will not mount)
+DefaultDependencies=no
+After=systemd-udev-settle.service boot.mount
+Before=var.mount local-fs.target sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/chc5/chc5-var-prepare.sh sd
+
+[Install]
+WantedBy=sysinit.target

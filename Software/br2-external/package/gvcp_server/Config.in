@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# Config.in - Buildroot menu: gvcp_server
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+config BR2_PACKAGE_GVCP_SERVER
+	bool "gvcp_server"
+	depends on BR2_INIT_SYSTEMD
+	depends on BR2_USE_MMU
+	help
+	  CHC5 Open Camera GigE Vision Control Protocol server.
+
+comment "gvcp_server needs systemd"
+	depends on !BR2_INIT_SYSTEMD

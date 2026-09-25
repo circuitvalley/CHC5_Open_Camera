@@ -21,8 +21,8 @@
 #define CHC5BLKC_BLACK_LEVEL_MASK		0x3FFF
 
 #define CHC5BLKC_PAD_SINK			0
-#define CHC5BLKC_PAD_SOURCE_DEMOSAIC		1
-#define CHC5BLKC_PAD_SOURCE_STATS		2
+#define CHC5BLKC_PAD_SOURCE_VIDEO		1
+#define CHC5BLKC_PAD_SOURCE_AUX		2
 #define CHC5BLKC_PAD_SOURCE_ETH			3
 #define CHC5BLKC_PAD_SOURCE_USB			4
 #define CHC5BLKC_NUM_PADS			5
@@ -283,10 +283,10 @@ static int chc5blkc_s_stream(struct v4l2_subdev *sd, int enable)
 
 static const char * const chc5blkc_pad_names[CHC5BLKC_NUM_PADS] = {
 	[CHC5BLKC_PAD_SINK]            = "Sink",
-	[CHC5BLKC_PAD_SOURCE_DEMOSAIC] = "Source wb_gain / gamma",
-	[CHC5BLKC_PAD_SOURCE_STATS]    = "Source ae_stats (raw tap)",
-	[CHC5BLKC_PAD_SOURCE_ETH]      = "Source pixel packer eth",
-	[CHC5BLKC_PAD_SOURCE_USB]      = "Source pixel packer usb",
+	[CHC5BLKC_PAD_SOURCE_VIDEO] = "Source 0",
+	[CHC5BLKC_PAD_SOURCE_AUX]    = "Source 1",
+	[CHC5BLKC_PAD_SOURCE_ETH]      = "Source 2",
+	[CHC5BLKC_PAD_SOURCE_USB]      = "Source 3",
 };
 
 static int chc5blkc_log_status(struct v4l2_subdev *sd)
