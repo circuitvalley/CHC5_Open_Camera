@@ -1,10 +1,10 @@
 # CHC5 Open Camera System
 
-[Available for Short time on Kickstarter](https://www.kickstarter.com/projects/circuitvalley/chc5-open-machine-vision-programmable-industrial-camera)
+[Available to Purchase CircuitValley Shop](https://circuitvalley.de/product-category/chc5-camera-system/)
 
-\
 
-\
+
+
 
 
 [CHC5 Sensor Comparison Part1](https://www.circuitvalley.com/2026/08/chc5-open-camera-sensor-comparison-specification.html)
