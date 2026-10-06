@@ -100,7 +100,7 @@ printf '%s-g%s%s rev %s (%s)\n' "$MONOREPO_VER" "$GIT_SHA" "$GIT_DIRTY" "$GIT_RE
     > "$TARGET_DIR/etc/chc5-version"
 echo "post-build.sh: /etc/chc5-version = $(cat "$TARGET_DIR/etc/chc5-version")"
 
-echo "3" > "$TARGET_DIR/etc/chc5-boot-env-required"
+echo "5" > "$TARGET_DIR/etc/chc5-boot-env-required"
 echo "post-build.sh: /etc/chc5-boot-env-required = $(cat "$TARGET_DIR/etc/chc5-boot-env-required")"
 
 date -u +%s > "$TARGET_DIR/etc/chc5-clock-default"
@@ -109,3 +109,11 @@ echo "post-build.sh: /etc/chc5-clock-default = $(cat "$TARGET_DIR/etc/chc5-clock
 mkdir -p "$TARGET_DIR/etc/chc5"
 chmod 0755 "$TARGET_DIR/etc/chc5"
 echo "post-build.sh: /etc/chc5 mount point created"
+
+MKIMAGE="${HOST_DIR:-}/bin/mkimage"
+[ -x "$MKIMAGE" ] || MKIMAGE="$REPO_ROOT/u-boot-xlnx/tools/mkimage"
+[ -x "$MKIMAGE" ] || MKIMAGE="$(command -v mkimage)" || { echo "post-build.sh: mkimage not found" >&2; exit 1; }
+mkdir -p "$TARGET_DIR/usr/share/chc5"
+"$MKIMAGE" -A arm -O linux -T script -C none -d "$(dirname "$0")/sd-boot.cmd" \
+	"$TARGET_DIR/usr/share/chc5/chc5sd.scr" >/dev/null
+echo "post-build.sh: /usr/share/chc5/chc5sd.scr built"

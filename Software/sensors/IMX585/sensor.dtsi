@@ -12,7 +12,8 @@
 imx585: sensor@1a {
 	compatible = "sony,imx585";
 	reg = <0x1a>;
-	clocks = <&clk_37m125>;
+	CHC5_CAM_RESET_XCLR
+	clocks = <&clk_24m>;
 	VANA-supply = <&imx585_vana>;
 	VDIG-supply = <&imx585_vdig>;
 	VDDL-supply = <&imx585_vddl>;

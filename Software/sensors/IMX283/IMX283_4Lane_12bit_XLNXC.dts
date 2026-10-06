@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: CC-BY-NC-ND-4.0
 /*
- * IMX283_4Lane_12bit_ST30.dts - IMX283, 4 lanes, 12-bit, Xilinx colour pipeline (ST30) overlay
+ * IMX283_4Lane_12bit_XLNXC.dts - IMX283 4-lane 12-bit, Xilinx colour pipeline overlay
  *
  * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
  * https://creativecommons.org/licenses/by-nc-nd/4.0/
@@ -9,8 +9,13 @@
 /dts-v1/;
 /plugin/;
 
+#define CHC5_CAM_EMIO
+#define CHC5_EOF_FSYNC
+#define CHC5_PTP_EVENT_PIN
+
 #define CHC5_BAYER_FORMAT	0x2c
 #define CHC5_DATA_LANES	1 2 3 4
+#define CHC5_LINK_FREQ	0x00 0x15752a00
 #define CHC5_BAYER_WIDTH	12
 
 / {

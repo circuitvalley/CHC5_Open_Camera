@@ -14,7 +14,7 @@
 #include <stdbool.h>
 #include <pthread.h>
 
-#define CHC5_I2C_PROTO_VER          5
+#define CHC5_I2C_PROTO_VER         11
 
 #define CHC5_DYNCFG_OFFSET          0x00
 #define CHC5_READBACK_OFFSET        0x40
@@ -32,7 +32,7 @@ typedef struct __attribute__((packed)) imgsensor_cfg_s {
     uint16_t    offset_y;
     uint32_t    exposure_us;
     uint16_t    analog_gain;
-    uint16_t    fps;
+    uint8_t     reserved_0e[2];
     uint8_t     test_pattern;
     uint8_t     stream_enable;
     uint8_t     binning;
@@ -57,14 +57,15 @@ typedef struct __attribute__((packed)) imgsensor_cfg_s {
     uint8_t     link_bw_mode;
     uint32_t    link_bw_limit;
     uint16_t    gamma_x100;
+    uint8_t     reserved_3c;
     uint8_t     aux_seq;
     uint8_t     proto_ver;
-    uint8_t     proto_flags;
     uint8_t     write_seq;
+    uint32_t    fps_mhz;
 } imgsensor_cfg_t;
 
-_Static_assert(sizeof(imgsensor_cfg_t) == 64,
-               "imgsensor_cfg_t must be 64 bytes");
+_Static_assert(sizeof(imgsensor_cfg_t) == 68,
+               "imgsensor_cfg_t must be 68 bytes");
 
 _Static_assert(offsetof(imgsensor_cfg_t, flip_flags)       == 0x34, "flip_flags offset");
 _Static_assert(offsetof(imgsensor_cfg_t, link_bw_mode)     == 0x35, "link_bw_mode offset");
@@ -75,7 +76,7 @@ _Static_assert(offsetof(imgsensor_cfg_t, offset_x)         == 0x04, "offset_x of
 _Static_assert(offsetof(imgsensor_cfg_t, offset_y)         == 0x06, "offset_y offset");
 _Static_assert(offsetof(imgsensor_cfg_t, exposure_us)      == 0x08, "exposure_us offset");
 _Static_assert(offsetof(imgsensor_cfg_t, analog_gain)      == 0x0C, "analog_gain offset");
-_Static_assert(offsetof(imgsensor_cfg_t, fps)              == 0x0E, "fps offset");
+_Static_assert(offsetof(imgsensor_cfg_t, fps_mhz)          == 0x40, "fps_mhz offset");
 _Static_assert(offsetof(imgsensor_cfg_t, test_pattern)     == 0x10, "test_pattern offset");
 _Static_assert(offsetof(imgsensor_cfg_t, stream_enable)    == 0x11, "stream_enable offset");
 _Static_assert(offsetof(imgsensor_cfg_t, binning)          == 0x12, "binning offset");
@@ -94,13 +95,83 @@ _Static_assert(offsetof(imgsensor_cfg_t, awb_color_temp)   == 0x30, "awb_color_t
 _Static_assert(offsetof(imgsensor_cfg_t, awb_gain_min_x100)== 0x31, "awb_gain_min_x100 offset");
 _Static_assert(offsetof(imgsensor_cfg_t, awb_gain_max_x10) == 0x32, "awb_gain_max_x10 offset");
 _Static_assert(offsetof(imgsensor_cfg_t, awb_rate_x100)    == 0x33, "awb_rate_x100 offset");
-_Static_assert(offsetof(imgsensor_cfg_t, proto_ver)        == 0x3D, "proto_ver offset");
-_Static_assert(offsetof(imgsensor_cfg_t, proto_flags)      == 0x3E, "proto_flags offset");
+_Static_assert(offsetof(imgsensor_cfg_t, aux_seq)          == 0x3D, "aux_seq offset");
+_Static_assert(offsetof(imgsensor_cfg_t, proto_ver)        == 0x3E, "proto_ver offset");
 _Static_assert(offsetof(imgsensor_cfg_t, write_seq)        == 0x3F, "write_seq offset");
-_Static_assert(offsetof(imgsensor_cfg_t, aux_seq)          == 0x3C, "aux_seq offset");
 _Static_assert(offsetof(imgsensor_cfg_t, gamma_x100)       == 0x3A, "gamma_x100 offset");
 
-#define CHC5_PF_GAMMA           0x01
+typedef struct __attribute__((packed)) chc5_i2c_cfg_s {
+    uint16_t    width;
+    uint16_t    height;
+    uint16_t    offset_x;
+    uint16_t    offset_y;
+    uint32_t    exposure_us;
+    uint32_t    fps_mhz;
+    uint32_t    pixel_format;
+    uint16_t    analog_gain;
+    uint16_t    black_level;
+    uint8_t     stream_enable;
+    uint8_t     tp_bin;
+    uint8_t     auto_flags;
+    uint8_t     ae_metering_mode;
+    uint8_t     ae_target;
+    uint8_t     flip_flags;
+    uint16_t    gamma_x100;
+    uint32_t    ae_exp_lower_us;
+    uint32_t    ae_exp_upper_us;
+    uint16_t    ae_roi_x;
+    uint16_t    ae_roi_y;
+    uint16_t    ae_roi_w;
+    uint16_t    ae_roi_h;
+    uint16_t    balance_ratio_r;
+    uint16_t    balance_ratio_b;
+    uint8_t     awb_color_temp;
+    uint8_t     awb_gain_min_x100;
+    uint8_t     awb_gain_max_x10;
+    uint8_t     awb_rate_x100;
+    uint8_t     reserved_38[4];
+    uint8_t     crc8;
+    uint8_t     aux_seq;
+    uint8_t     proto_ver;
+    uint8_t     write_seq;
+} chc5_i2c_cfg_t;
+
+#define CHC5_TPBIN_TP_MASK          0x0F
+#define CHC5_TPBIN_BINX_SHIFT       4
+#define CHC5_TPBIN_BINY_SHIFT       6
+#define CHC5_TPBIN_BIN_MASK         0x03
+#define CHC5_FLIP_FLAGS_MASK        0x0F
+
+_Static_assert(sizeof(chc5_i2c_cfg_t) == 64, "chc5_i2c_cfg_t must be 64 bytes");
+_Static_assert(offsetof(chc5_i2c_cfg_t, width)             == 0x00, "i2c width");
+_Static_assert(offsetof(chc5_i2c_cfg_t, height)            == 0x02, "i2c height");
+_Static_assert(offsetof(chc5_i2c_cfg_t, offset_x)          == 0x04, "i2c offset_x");
+_Static_assert(offsetof(chc5_i2c_cfg_t, offset_y)          == 0x06, "i2c offset_y");
+_Static_assert(offsetof(chc5_i2c_cfg_t, exposure_us)       == 0x08, "i2c exposure_us");
+_Static_assert(offsetof(chc5_i2c_cfg_t, fps_mhz)           == 0x0C, "i2c fps_mhz");
+_Static_assert(offsetof(chc5_i2c_cfg_t, pixel_format)      == 0x10, "i2c pixel_format");
+_Static_assert(offsetof(chc5_i2c_cfg_t, analog_gain)       == 0x14, "i2c analog_gain");
+_Static_assert(offsetof(chc5_i2c_cfg_t, black_level)       == 0x16, "i2c black_level");
+_Static_assert(offsetof(chc5_i2c_cfg_t, stream_enable)     == 0x18, "i2c stream_enable");
+_Static_assert(offsetof(chc5_i2c_cfg_t, tp_bin)            == 0x19, "i2c tp_bin");
+_Static_assert(offsetof(chc5_i2c_cfg_t, auto_flags)        == 0x1A, "i2c auto_flags");
+_Static_assert(offsetof(chc5_i2c_cfg_t, ae_metering_mode)  == 0x1B, "i2c ae_metering_mode");
+_Static_assert(offsetof(chc5_i2c_cfg_t, ae_target)         == 0x1C, "i2c ae_target");
+_Static_assert(offsetof(chc5_i2c_cfg_t, flip_flags)        == 0x1D, "i2c flip_flags");
+_Static_assert(offsetof(chc5_i2c_cfg_t, gamma_x100)        == 0x1E, "i2c gamma_x100");
+_Static_assert(offsetof(chc5_i2c_cfg_t, ae_exp_lower_us)   == 0x20, "i2c ae_exp_lower_us");
+_Static_assert(offsetof(chc5_i2c_cfg_t, ae_exp_upper_us)   == 0x24, "i2c ae_exp_upper_us");
+_Static_assert(offsetof(chc5_i2c_cfg_t, ae_roi_x)          == 0x28, "i2c ae_roi_x");
+_Static_assert(offsetof(chc5_i2c_cfg_t, ae_roi_h)          == 0x2E, "i2c ae_roi_h");
+_Static_assert(offsetof(chc5_i2c_cfg_t, balance_ratio_r)   == 0x30, "i2c balance_ratio_r");
+_Static_assert(offsetof(chc5_i2c_cfg_t, balance_ratio_b)   == 0x32, "i2c balance_ratio_b");
+_Static_assert(offsetof(chc5_i2c_cfg_t, awb_color_temp)    == 0x34, "i2c awb_color_temp");
+_Static_assert(offsetof(chc5_i2c_cfg_t, awb_rate_x100)     == 0x37, "i2c awb_rate_x100");
+_Static_assert(offsetof(chc5_i2c_cfg_t, reserved_38)       == 0x38, "i2c reserved_38");
+_Static_assert(offsetof(chc5_i2c_cfg_t, crc8)              == 0x3C, "i2c crc8");
+_Static_assert(offsetof(chc5_i2c_cfg_t, aux_seq)           == 0x3D, "i2c aux_seq");
+_Static_assert(offsetof(chc5_i2c_cfg_t, proto_ver)         == 0x3E, "i2c proto_ver");
+_Static_assert(offsetof(chc5_i2c_cfg_t, write_seq)         == 0x3F, "i2c write_seq");
 
 #define CHC5_GAMMA_NO_CHANGE    0
 #define CHC5_GAMMA_OFF          1
@@ -109,20 +180,25 @@ _Static_assert(offsetof(imgsensor_cfg_t, gamma_x100)       == 0x3A, "gamma_x100 
 #define CHC5_GAMMA_USER_MAX     400
 #define CHC5_GAMMA_CURVE_ADJ    0x8000
 
+#define RB_F_APPLIED_SEQ     0x01
+
 typedef struct __attribute__((packed)) imgsensor_readback_s {
     uint8_t     rb_seq;
     uint8_t     ae_status;
     uint16_t    _reserved0;
     uint32_t    exposure_us;
     uint16_t    analog_gain;
-    uint16_t    fps_x100;
+    uint16_t    _reserved_0a;
     int16_t     temp_c_x10;
     uint8_t     aux_status;
     uint8_t     line_levels;
     uint32_t    pixfmt_usb;
     uint8_t     cfa_order;
     uint8_t     flip_echo;
-    uint8_t     _reserved1[9];
+    uint8_t     applied_seq;
+    uint8_t     rb_flags;
+    uint32_t    fps_mhz;
+    uint8_t     _reserved1[3];
     uint8_t     rb_seq_echo;
 } imgsensor_readback_t;
 
@@ -137,29 +213,88 @@ typedef struct __attribute__((packed)) chc5_camio_i2c_s {
     uint8_t     in_activation;
     uint8_t     out_source;
     uint8_t     strobe_src;
-    uint8_t     reserved_07;
-    uint8_t     reserved_08;
+    uint8_t     trig_src;
+    uint8_t     trig_flags;
     uint8_t     sync_role;
     uint8_t     sync_trig_route;
-    uint8_t     reserved0;
+    uint8_t     link_mode;
     uint16_t    trigger_divider;
-    uint16_t    reserved1;
+    uint16_t    link_limit_mbs;
     uint32_t    trigger_delay_us;
     uint32_t    strobe_delay_us;
-    uint32_t    reserved_18;
+    uint16_t    ae_gain_lower_db10;
+    uint16_t    ae_gain_upper_db10;
     uint32_t    strobe_duration_us;
     uint32_t    strobe_minon_us;
-    uint32_t    reserved_24;
-    uint8_t     reserved2[23];
+    uint32_t    in_filter_us;
+    uint8_t     sw_trig_seq;
+    uint32_t    host_mask;
+    uint8_t     reserved2[17];
+    uint8_t     crc8;
     uint8_t     seq_echo;
 } chc5_camio_i2c_t;
 
 _Static_assert(sizeof(chc5_camio_i2c_t) == 64,
                "chc5_camio_i2c_t must be 64 bytes");
 _Static_assert(offsetof(chc5_camio_i2c_t, seq)              == 0x00, "camio seq offset");
+_Static_assert(offsetof(chc5_camio_i2c_t, link_mode)        == 0x0B, "camio link_mode offset");
+_Static_assert(offsetof(chc5_camio_i2c_t, link_limit_mbs)   == 0x0E, "camio link_limit_mbs offset");
+_Static_assert(offsetof(chc5_camio_i2c_t, ae_gain_lower_db10) == 0x18, "camio ae_gain_lower_db10 offset");
+_Static_assert(offsetof(chc5_camio_i2c_t, ae_gain_upper_db10) == 0x1A, "camio ae_gain_upper_db10 offset");
 _Static_assert(offsetof(chc5_camio_i2c_t, trigger_delay_us) == 0x10, "camio trig_delay offset");
-_Static_assert(offsetof(chc5_camio_i2c_t, reserved_24) == 0x24, "camio timebase offset");
+_Static_assert(offsetof(chc5_camio_i2c_t, in_filter_us) == 0x24, "camio in_filter offset");
+_Static_assert(offsetof(chc5_camio_i2c_t, sw_trig_seq)  == 0x28, "camio sw_trig_seq offset");
+_Static_assert(offsetof(chc5_camio_i2c_t, host_mask)    == 0x29, "camio host_mask offset");
+
+#define CHC5_AUX_M_IN_FUNCTION    (1u << 0)
+#define CHC5_AUX_M_TRIG_SRC       (1u << 1)
+#define CHC5_AUX_M_IN_ACTIVATION  (1u << 2)
+#define CHC5_AUX_M_IN_INVERT      (1u << 3)
+#define CHC5_AUX_M_TRIG_DIVIDER   (1u << 4)
+#define CHC5_AUX_M_TRIG_DELAY     (1u << 5)
+#define CHC5_AUX_M_WIDTH_MODE     (1u << 6)
+#define CHC5_AUX_M_IN_FILTER      (1u << 7)
+#define CHC5_AUX_M_OUT_SOURCE     (1u << 8)
+#define CHC5_AUX_M_OUT_INVERT     (1u << 9)
+#define CHC5_AUX_M_OUT_USER       (1u << 10)
+#define CHC5_AUX_M_STROBE_ENABLE  (1u << 11)
+#define CHC5_AUX_M_STROBE_SRC     (1u << 12)
+#define CHC5_AUX_M_STROBE_DELAY   (1u << 13)
+#define CHC5_AUX_M_STROBE_DUR     (1u << 14)
+#define CHC5_AUX_M_STROBE_MINON   (1u << 15)
+#define CHC5_AUX_M_SYNC_ROLE      (1u << 16)
+
+#define CHC5_AUXIMG_OFFSET          0x60
+typedef struct __attribute__((packed)) chc5_aux_applied_s {
+    uint8_t     seq;
+    uint8_t     flags;
+    uint8_t     in_function;
+    uint8_t     in_activation;
+    uint8_t     out_source;
+    uint8_t     strobe_src;
+    uint8_t     sync_role;
+    uint8_t     trig_src;
+    uint8_t     trig_flags;
+    uint8_t     io_caps;
+    uint16_t    trigger_divider;
+    uint32_t    trigger_delay_us;
+    uint32_t    strobe_delay_us;
+    uint32_t    strobe_duration_us;
+    uint32_t    strobe_minon_us;
+    uint16_t    in_filter_us;
+    uint8_t     sync_status;
+    uint8_t     seq_echo;
+} chc5_aux_applied_t;
+_Static_assert(sizeof(chc5_aux_applied_t) == 32, "applied aux image must be 32 bytes");
+_Static_assert(offsetof(chc5_camio_i2c_t, trig_src)     == 0x07, "camio trig_src offset");
+
+#define CHC5_AUX_TF_WIDTH_MODE  (1u << 0)
 _Static_assert(offsetof(chc5_camio_i2c_t, seq_echo)         == 0x3F, "camio seq_echo offset");
+_Static_assert(offsetof(chc5_camio_i2c_t, crc8)             == 0x3E, "camio crc8 offset");
+
+#define CHC5_CFG_CRC_OFF    0x3C
+#define CHC5_AUX_CRC_OFF    0x3E
+uint8_t chc5_crc8(const uint8_t *blk, uint8_t skip);
 
 #define CHC5_AUX_F_ENABLE       (1u << 0)
 #define CHC5_AUX_F_IN_INVERT    (1u << 1)
@@ -168,10 +303,14 @@ _Static_assert(offsetof(chc5_camio_i2c_t, seq_echo)         == 0x3F, "camio seq_
 #define CHC5_AUX_F_OUT_INVERT   (1u << 4)
 #define CHC5_AUX_F_OUT_USER     (1u << 5)
 #define CHC5_AUX_F_ROLE_BY_I2C  (1u << 6)
+#define CHC5_AUX_F_IO_SET       (1u << 7)
 _Static_assert(offsetof(imgsensor_readback_t, rb_seq)      == 0x00, "rb_seq offset");
 _Static_assert(offsetof(imgsensor_readback_t, exposure_us) == 0x04, "rb exposure offset");
 _Static_assert(offsetof(imgsensor_readback_t, pixfmt_usb)  == 0x10, "rb pixfmt_usb offset");
 _Static_assert(offsetof(imgsensor_readback_t, cfa_order)   == 0x14, "rb cfa_order offset");
+_Static_assert(offsetof(imgsensor_readback_t, applied_seq) == 0x16, "rb applied_seq offset");
+_Static_assert(offsetof(imgsensor_readback_t, rb_flags)    == 0x17, "rb rb_flags offset");
+_Static_assert(offsetof(imgsensor_readback_t, fps_mhz)     == 0x18, "rb fps_mhz offset");
 _Static_assert(offsetof(imgsensor_readback_t, flip_echo)   == 0x15, "rb flip_echo offset");
 _Static_assert(offsetof(imgsensor_readback_t, rb_seq_echo) == 0x1F, "rb_seq_echo offset");
 
@@ -215,6 +354,7 @@ _Static_assert(offsetof(imgsensor_readback_t, rb_seq_echo) == 0x1F, "rb_seq_echo
 #define DIRTY_PIXPACK        (1u << 5)
 #define DIRTY_CAMIO          (1u << 6)
 #define DIRTY_GAMMA          (1u << 7)
+#define DIRTY_USB_ACK        (1u << 8)
 
 struct camcfg_state_s {
     imgsensor_cfg_t sensor_cfg;
@@ -266,10 +406,36 @@ struct camcfg_state_s {
 #define IPC_MSG_GET_CONFIG        0x02
 #define IPC_MSG_SET_GENREG        0x03
 #define IPC_MSG_STREAM_CTRL       0x06
+#define IPC_MSG_TRIGGER_EVENT     0x07
+#define IPC_MSG_GET_CAMIO_REGS    0x08
 #define IPC_MSG_REPLY_OK          0x80
 #define IPC_MSG_REPLY_ERR         0x81
 
 #define IPC_MAX_PAYLOAD  4096
+
+#define CHC5_TRIGEV_SOFTWARE  1
+#define CHC5_TRIGEV_ACTION    2
+
+#define CHC5_CAMIO_REG_BASE   0xE000u
+#define CHC5_CAMIO_REG_SIZE   0x100u
+struct camcfgd_camio_regs {
+    uint8_t  regs[CHC5_CAMIO_REG_SIZE];
+    uint32_t exposure_mode;
+};
+
+#define CHC5_SYNC_RATE_DEFAULT_MHZ  30000u
+#define CHC5_SYNC_RATE_MIN_MHZ      10u
+#define CHC5_SYNC_RATE_MAX_MHZ      1000000u
+#define CHC5_TRIG_DELAY_MAX_US      655350u
+
+#define CHC5_IOCAP_TRIGGER   (1u << 0)
+#define CHC5_IOCAP_SOFTWARE  (1u << 1)
+#define CHC5_IOCAP_DEBOUNCE  (1u << 2)
+#define CHC5_IOCAP_PTP_SYNC  (1u << 3)
+#define CHC5_IOCAP_GENLOCK   (1u << 4)
+#define CHC5_IOCAP_NATIVE_STROBE (1u << 5)
+#define CHC5_IOCAP_SYNC_OUT  (1u << 6)
+#define CHC5_IOCAP_PTP_PULSE (1u << 7)
 
 #define USB_CHARDEV_PATH   "/sys/bus/i2c/devices/1-0010/slave-chc5"
 
@@ -292,10 +458,10 @@ struct camcfg_state_s {
 extern int    g_sensor_mono;
 
 extern int    g_bayer_order;
+extern int    g_cfa_table;
 extern int    g_orient_hflip;
 extern int    g_orient_vflip;
 
-extern bool     g_sensor_caps_looked;
 extern uint32_t g_sensor_width;
 extern uint32_t g_sensor_height;
 extern uint32_t g_width_min;
@@ -350,10 +516,11 @@ static inline bool pixfmt_is_valid(uint32_t pfnc)
 #define GIGE_REG_EXPOSURE_AUTO  0xC03C
 #define GIGE_REG_AE_EXP_LOWER   0xC040
 #define GIGE_REG_AE_EXP_UPPER   0xC048
-#define GIGE_REG_FPS_ENABLE     0xC018
 #define GIGE_REG_FPS            0xC01C
 #define GIGE_REG_GAIN           0xD004
 #define GIGE_REG_GAIN_AUTO      0xD00C
+#define GIGE_REG_AE_GAIN_LOWER  0xD010
+#define GIGE_REG_AE_GAIN_UPPER  0xD018
 #define GIGE_REG_BALANCE_WHITE_AUTO 0xD040
 #define GIGE_REG_BALANCE_RATIO_SEL  0xD044
 #define GIGE_REG_BALANCE_RATIO      0xD048

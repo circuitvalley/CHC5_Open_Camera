@@ -15,6 +15,7 @@ struct phy_device;
 #if IS_ENABLED(CONFIG_MARVELL_PHY_PTP)
 int marvell_phy_ptp_event_enable(struct phy_device *phydev, bool enable);
 int marvell_phy_ptp_event_read(struct phy_device *phydev, u64 *ns, u8 *count);
+bool marvell_phy_ptp_timestamping(struct phy_device *phydev);
 #else
 static inline int marvell_phy_ptp_event_enable(struct phy_device *phydev,
 					       bool enable)
@@ -26,6 +27,11 @@ static inline int marvell_phy_ptp_event_read(struct phy_device *phydev,
 					     u64 *ns, u8 *count)
 {
 	return -EOPNOTSUPP;
+}
+
+static inline bool marvell_phy_ptp_timestamping(struct phy_device *phydev)
+{
+	return false;
 }
 #endif
 

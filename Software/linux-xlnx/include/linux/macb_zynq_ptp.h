@@ -16,6 +16,7 @@ struct net_device;
 int macb_zynq_ptp_now_ns(struct net_device *ndev, u64 *ns);
 int macb_zynq_ptp_follow(struct net_device *ndev, u64 ref_ns, u64 gem_pre_ns,
 			 u64 gem_post_ns);
+bool macb_zynq_ptp_following(struct net_device *ndev);
 #else
 static inline int macb_zynq_ptp_now_ns(struct net_device *ndev, u64 *ns)
 {
@@ -26,6 +27,11 @@ static inline int macb_zynq_ptp_follow(struct net_device *ndev, u64 ref_ns,
 				       u64 gem_pre_ns, u64 gem_post_ns)
 {
 	return -EOPNOTSUPP;
+}
+
+static inline bool macb_zynq_ptp_following(struct net_device *ndev)
+{
+	return false;
 }
 #endif
 

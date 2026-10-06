@@ -23,6 +23,8 @@ vivado -mode batch -source build.tcl
 | Pixel packing: Bayer, RGB, YUV, mono (8 formats) | |
 | 1920x1080 @ 60 Hz HDMI preview | |
 | Camera I/O (trigger in, strobe out, frame sync) and PTP-timed frame start | |
+| PTP event output to the Ethernet PHY (ball T10) | |
+| Sensor module power enable and reset from the PS | |
 
 The archive format and every manifest field are described in
 **[BITSTREAM_ARCHIVE.md](BITSTREAM_ARCHIVE.md)**.
@@ -209,7 +211,7 @@ These critical warnings are expected and harmless:
 | Message | Why |
 |---|---|
 | `PSU-1`, `PSU-2` negative `DQS_TO_CLK_DELAY` | Board DDR trace-length data; the PS DDR controller handles it. |
-| `Common 17-55` "set_property expects at least one object" (x96), `Common 17-142` `CONFIG_VOLTAGE` | `CHC5.xdc` covers board pins this design does not use. |
+| `Common 17-55` "set_property expects at least one object" (x48), `Common 17-142` `CONFIG_VOLTAGE` | `CHC5.xdc` covers board pins this design does not use. |
 | `BD 41-1343`, `BD 41-967` | Reset and clock association on the USB bridge path. |
 
 ---
@@ -230,11 +232,17 @@ MIPI CSI-2 RX Subsystem (4 lanes, RAW12, 1250 Mb/s per lane)
                                           +-> Crop / frame decimation -> VDMA -> DDR
                                               DDR -> VDMA -> YUV->RGB -> Video out -> rgb2dvi -> HDMI
 
-Pixel packer 0 -> VDMA -> DDR           (GigE path)
+Pixel packer 0 -> End-of-frame sync -> VDMA -> DDR   (GigE path)
 Pixel packer 1 -> FIFO -> 32-bit parallel bus with frame/line sync   (USB 3 bridge)
 
-Camera I/O + PTP time base: trigger input, strobe output, frame sync, PTP-scheduled frame start.
+Camera I/O + PTP time base: trigger input, strobe output, frame sync, PTP-scheduled frame start,
+PTP event output to the Ethernet PHY.
 ```
+
+**End-of-frame sync** (`chc5_eof_fsync`) watches the GigE stream and pulses the VDMA's frame sync
+right after the last line of each frame, so the VDMA closes a frame as soon as its data is in
+instead of at the next frame start. Its Linux driver matches the device-tree compatible
+`circuitvalley,chc5-eof-fsync-1.0`.
 
 **Crop** (`chc5_axis_crop`) cuts a window out of the raw sensor image before any processing, so every
 output gets the cropped frame; the typical use is removing the sensor's optical-black border. After
@@ -263,15 +271,20 @@ Each block's register address is in the block design's **Address Editor**.
 
 ## Resets used by the Linux drivers
 
-The four Xilinx HLS cores are reset through PS **EMIO GPIO**, because their Linux drivers
-require a `reset-gpios` property and pulse it on every stream start. All four are active-low.
+PS **EMIO GPIO** (6 bits) drives the sensor module power and reset, and the resets of the four
+Xilinx HLS cores, whose Linux drivers require a `reset-gpios` property and pulse it on every
+stream start. The four core resets are active-low.
 
-| EMIO bit | PS GPIO line | Block |
+| EMIO bit | PS GPIO line | Drives |
 |---|---|---|
-| 0 | 54 | `v_demosaic_0` |
-| 1 | 55 | `v_gamma_lut_0` |
-| 2 | 56 | `v_proc_ss_0` (CSC RGB->RGB) |
-| 3 | 57 | `v_proc_ss_1` (CSC RGB->YUV) |
+| 0 | 54 | `CAM_RESET` (ball E19), sensor module reset |
+| 1 | 55 | `CAM_ENABLE` (ball E18), sensor module power |
+| 2 | 56 | `v_demosaic_0` |
+| 3 | 57 | `v_gamma_lut_0` |
+| 4 | 58 | `v_proc_ss_0` (CSC RGB->RGB) |
+| 5 | 59 | `v_proc_ss_1` (CSC RGB->YUV) |
+
+The bitstream loads with the sensor module unpowered; the sensor's device-tree overlay powers it.
 
 These cores stay in reset while nothing is streaming. Reading their registers then can
 hang the AXI bus, so only access them during streaming.

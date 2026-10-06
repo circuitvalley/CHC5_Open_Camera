@@ -89,6 +89,7 @@
 #define OX08B40_REG_X_OUTPUT_SIZE	CCI_REG16(0x3808)
 #define OX08B40_REG_Y_OUTPUT_SIZE	CCI_REG16(0x380a)
 #define OX08B40_REG_ISP_X_WIN_TRUNC	CCI_REG16(0x3810)
+#define OX08B40_REG_ISP_Y_WIN_TRUNC	CCI_REG16(0x3812)
 
 #define OX08B40_REG_HTS_DCG		CCI_REG16(0x380c)
 #define OX08B40_HTS_DCG_BASE		1536U
@@ -286,8 +287,8 @@ static const struct ox08b40_mode supported_modes[] = {
 		.width = 3840,
 		.height = 2160,
 		.crop = {
-			.left = OX08B40_PIXEL_ARRAY_LEFT,
-			.top = OX08B40_PIXEL_ARRAY_TOP,
+			.left = 0,
+			.top = 0,
 			.width = 3840,
 			.height = 2160,
 		},
@@ -355,7 +356,13 @@ struct ox08b40 {
 	struct mutex mutex;
 
 	bool streaming;
+
+	bool table_loaded;
+	struct v4l2_rect loaded_crop;
+	u32 loaded_flips;
 };
+
+#define OX08B40_AUTOSUSPEND_MS		2000
 
 static inline struct ox08b40 *to_ox08b40(struct v4l2_subdev *_sd)
 {
@@ -533,12 +540,10 @@ static void ox08b40_clamp_crop(struct v4l2_rect *r)
 	h = clamp_t(u32, ALIGN_DOWN((u32)r->height, OX08B40_HEIGHT_ALIGN),
 		    OX08B40_MIN_HEIGHT, OX08B40_PIXEL_ARRAY_HEIGHT);
 
-	l = clamp_t(u32, ALIGN_DOWN((u32)r->left, OX08B40_OFFSET_ALIGN),
-		    OX08B40_PIXEL_ARRAY_LEFT,
-		    OX08B40_PIXEL_ARRAY_LEFT + OX08B40_PIXEL_ARRAY_WIDTH - w);
-	t = clamp_t(u32, ALIGN_DOWN((u32)r->top, OX08B40_OFFSET_ALIGN),
-		    OX08B40_PIXEL_ARRAY_TOP,
-		    OX08B40_PIXEL_ARRAY_TOP + OX08B40_PIXEL_ARRAY_HEIGHT - h);
+	l = clamp_t(u32, ALIGN_DOWN((u32)max(r->left, 0), OX08B40_OFFSET_ALIGN),
+		    0, OX08B40_PIXEL_ARRAY_WIDTH - w);
+	t = clamp_t(u32, ALIGN_DOWN((u32)max(r->top, 0), OX08B40_OFFSET_ALIGN),
+		    0, OX08B40_PIXEL_ARRAY_HEIGHT - h);
 
 	r->left = l;
 	r->top = t;
@@ -561,31 +566,77 @@ static u32 ox08b40_x_trunc_for(u32 left)
 	return trunc;
 }
 
+static u32 ox08b40_window_left(struct ox08b40 *ox08b40)
+{
+	const struct v4l2_rect *c = &ox08b40->crop;
+
+	if (!ox08b40->hflip->val)
+		return OX08B40_PIXEL_ARRAY_LEFT + (u32)c->left;
+
+	return OX08B40_PIXEL_ARRAY_LEFT + OX08B40_PIXEL_ARRAY_WIDTH -
+	       ((u32)c->left + (u32)c->width);
+}
+
+static u32 ox08b40_window_top(struct ox08b40 *ox08b40)
+{
+	const struct v4l2_rect *c = &ox08b40->crop;
+
+	if (!ox08b40->vflip->val)
+		return OX08B40_PIXEL_ARRAY_TOP + (u32)c->top;
+
+	return OX08B40_PIXEL_ARRAY_TOP + OX08B40_PIXEL_ARRAY_HEIGHT -
+	       ((u32)c->top + (u32)c->height);
+}
+
 static int ox08b40_program_window(struct ox08b40 *ox08b40)
 {
 	const struct v4l2_rect *c = &ox08b40->crop;
+	u32 left = ox08b40_window_left(ox08b40);
 	u32 cut = ox08b40_tail_cut((u32)c->width);
-	u32 x_trunc = ox08b40_x_trunc_for((u32)c->left);
-	u32 x_start = (u32)c->left - x_trunc;
-	u32 y_start = (u32)c->top - OX08B40_ISP_Y_TRUNC;
+	u32 x_trunc = ox08b40_x_trunc_for(left);
+	u32 x_start = left - x_trunc;
+	u32 top = ox08b40_window_top(ox08b40);
 	u32 x_end = x_start + x_trunc + (u32)c->width +
 		    OX08B40_ISP_X_MARGIN_R - 1;
-	u32 y_end = y_start + OX08B40_ISP_Y_TRUNC + (u32)c->height + cut +
-		    OX08B40_ISP_Y_MARGIN_B - 1;
+	u32 y_trunc = OX08B40_ISP_Y_TRUNC;
+	u32 y_start, y_end;
 	int ret = 0;
 
-	if (y_end > OX08B40_NATIVE_HEIGHT - 1) {
-		u32 over = y_end - (OX08B40_NATIVE_HEIGHT - 1);
-		u32 margin = min(over, OX08B40_ISP_Y_MARGIN_B);
+	if (!ox08b40->vflip->val) {
+		y_start = top - OX08B40_ISP_Y_TRUNC;
+		y_end = y_start + OX08B40_ISP_Y_TRUNC + (u32)c->height + cut +
+			OX08B40_ISP_Y_MARGIN_B - 1;
 
-		y_end -= margin;
-		over -= margin;
-		over = min(over, y_start);
-		y_start -= over;
-		y_end -= over;
+		if (y_end > OX08B40_NATIVE_HEIGHT - 1) {
+			u32 over = y_end - (OX08B40_NATIVE_HEIGHT - 1);
+			u32 margin = min(over, OX08B40_ISP_Y_MARGIN_B);
+
+			y_end -= margin;
+			over -= margin;
+			over = min(over, y_start);
+			y_start -= over;
+			y_end -= over;
+		}
+	} else {
+		u32 pic = top;
+
+		if (pic < cut + y_trunc) {
+			if (pic >= cut) {
+				y_trunc = pic - cut;
+			} else {
+				y_trunc = 0;
+				pic = cut;
+			}
+		}
+		y_start = pic - cut - y_trunc;
+		y_end = pic + (u32)c->height + OX08B40_ISP_Y_MARGIN_B - 1;
+		if (y_end > OX08B40_NATIVE_HEIGHT - 1) {
+			y_end = OX08B40_NATIVE_HEIGHT - 1;
+		}
 	}
 
 	ox08b40_write(ox08b40, OX08B40_REG_ISP_X_WIN_TRUNC, x_trunc, &ret);
+	ox08b40_write(ox08b40, OX08B40_REG_ISP_Y_WIN_TRUNC, y_trunc, &ret);
 	ox08b40_write(ox08b40, OX08B40_REG_X_ADDR_START, x_start, &ret);
 	ox08b40_write(ox08b40, OX08B40_REG_Y_ADDR_START, y_start, &ret);
 	ox08b40_write(ox08b40, OX08B40_REG_X_ADDR_END, x_end, &ret);
@@ -1009,15 +1060,13 @@ static int ox08b40_set_pad_format(struct v4l2_subdev *sd,
 
 		r.width = fmt->format.width;
 		r.height = fmt->format.height;
-		r.left = cur ? cur->left : OX08B40_PIXEL_ARRAY_LEFT;
-		r.top  = cur ? cur->top  : OX08B40_PIXEL_ARRAY_TOP;
+		r.left = cur ? cur->left : 0;
+		r.top  = cur ? cur->top  : 0;
 		ox08b40_clamp_crop(&r);
 
 		if (!cur || cur->width != r.width || cur->height != r.height) {
-			r.left = OX08B40_PIXEL_ARRAY_LEFT +
-				 ((OX08B40_PIXEL_ARRAY_WIDTH - r.width) / 2 & ~1U);
-			r.top = OX08B40_PIXEL_ARRAY_TOP +
-				((OX08B40_PIXEL_ARRAY_HEIGHT - r.height) / 2 & ~1U);
+			r.left = (OX08B40_PIXEL_ARRAY_WIDTH - r.width) / 2 & ~1U;
+			r.top = (OX08B40_PIXEL_ARRAY_HEIGHT - r.height) / 2 & ~1U;
 		}
 		}
 
@@ -1069,8 +1118,8 @@ static int ox08b40_get_selection(struct v4l2_subdev *sd,
 		return 0;
 	case V4L2_SEL_TGT_CROP_DEFAULT:
 	case V4L2_SEL_TGT_CROP_BOUNDS:
-		sel->r.left = OX08B40_PIXEL_ARRAY_LEFT;
-		sel->r.top = OX08B40_PIXEL_ARRAY_TOP;
+		sel->r.left = 0;
+		sel->r.top = 0;
 		sel->r.width = OX08B40_PIXEL_ARRAY_WIDTH;
 		sel->r.height = OX08B40_PIXEL_ARRAY_HEIGHT;
 		return 0;
@@ -1141,13 +1190,24 @@ static int ox08b40_start_streaming(struct ox08b40 *ox08b40)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ox08b40->sd);
 	const struct ox08b40_reg_list *reg_list = &ox08b40->mode->reg_list;
+	u32 flips;
 	int ret;
 
-	ret = ox08b40_write_regs(ox08b40, reg_list->regs,
-				 reg_list->num_of_regs, NULL);
-	if (ret) {
-		dev_err(&client->dev, "%s failed to set mode\n", __func__);
-		return ret;
+	flips = (ox08b40->hflip->val ? 1 : 0) | (ox08b40->vflip->val ? 2 : 0);
+	if (!ox08b40->table_loaded || flips != ox08b40->loaded_flips ||
+	    memcmp(&ox08b40->crop, &ox08b40->loaded_crop,
+		   sizeof(ox08b40->crop))) {
+		ret = ox08b40_write_regs(ox08b40, reg_list->regs,
+					 reg_list->num_of_regs, NULL);
+		if (ret) {
+			ox08b40->table_loaded = false;
+			dev_err(&client->dev, "%s failed to set mode\n",
+				__func__);
+			return ret;
+		}
+		ox08b40->table_loaded = true;
+		ox08b40->loaded_crop = ox08b40->crop;
+		ox08b40->loaded_flips = flips;
 	}
 
 	ret = ox08b40_program_window(ox08b40);
@@ -1226,7 +1286,8 @@ static int ox08b40_set_stream(struct v4l2_subdev *sd, int enable)
 			goto err_rpm_put;
 	} else {
 		ox08b40_stop_streaming(ox08b40);
-		pm_runtime_put(&client->dev);
+		pm_runtime_mark_last_busy(&client->dev);
+		pm_runtime_put_autosuspend(&client->dev);
 	}
 
 	ox08b40->streaming = enable;
@@ -1283,6 +1344,7 @@ static int ox08b40_power_off(struct device *dev)
 	gpiod_set_value_cansleep(ox08b40->reset_gpio, 1);
 	clk_disable_unprepare(ox08b40->xclk);
 	regulator_bulk_disable(OX08B40_NUM_SUPPLIES, ox08b40->supplies);
+	ox08b40->table_loaded = false;
 
 	return 0;
 }
@@ -1571,6 +1633,8 @@ static int ox08b40_probe(struct i2c_client *client)
 	usleep_range(10000, 11000);
 
 	pm_runtime_set_active(dev);
+	pm_runtime_set_autosuspend_delay(dev, OX08B40_AUTOSUSPEND_MS);
+	pm_runtime_use_autosuspend(dev);
 	pm_runtime_enable(dev);
 	pm_runtime_idle(dev);
 
@@ -1642,6 +1706,7 @@ static void ox08b40_remove(struct i2c_client *client)
 	media_entity_cleanup(&sd->entity);
 	ox08b40_free_controls(ox08b40);
 
+	pm_runtime_dont_use_autosuspend(&client->dev);
 	pm_runtime_disable(&client->dev);
 	if (!pm_runtime_status_suspended(&client->dev))
 		ox08b40_power_off(&client->dev);

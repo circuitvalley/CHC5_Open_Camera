@@ -12,6 +12,7 @@
 		ox08b40: sensor@36 {
 			compatible = "ovti,ox08b40";
 			reg = <0x36>;
+			CHC5_CAM_RESET_RESETB
 			clocks = <&clk_24m>;
 			avdd-supply  = <&ox08b40_avdd>;
 			dovdd-supply = <&ox08b40_dovdd>;

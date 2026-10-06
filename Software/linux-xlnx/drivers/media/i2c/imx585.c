@@ -65,6 +65,8 @@
 
 #define IMX585_HMAX_LINE_OVERHEAD	40
 #define IMX585_HMAX_ABS_MIN		280
+#define IMX585_HMAX_DELIVERY_BASE	276
+#define IMX585_HMAX_DELIVERY_PX_DIV	12
 #define IMX585_BPP_12			12
 
 #define IMX585_VBLANK_MIN		70
@@ -109,6 +111,16 @@ static unsigned int imx585_gain_code(unsigned int db10)
 #define IMX585_REG_TESTCLKEN		0x5300
 
 #define IMX585_INTERNAL_CLOCK		74250000U
+
+#define IMX585_REG_XXS_OUTSEL		0x30a4
+#define IMX585_REG_XXS_DRV		0x30a6
+#define IMX585_REG_EXTMODE		0x30ce
+#define IMX585_SYNC_LEADER_EXTMODE		0x00
+#define IMX585_SYNC_LEADER_DRV		0x00
+#define IMX585_SYNC_LEADER_OUTSEL		0x0a
+#define IMX585_SYNC_FOLLOW_EXTMODE		0x01
+#define IMX585_SYNC_FOLLOW_DRV		0x03
+#define IMX585_SYNC_FOLLOW_OUTSEL		0x08
 
 #define IMX585_EMBEDDED_LINE_WIDTH	16384
 #define IMX585_NUM_EMBEDDED_LINES	1
@@ -639,6 +651,7 @@ struct imx585 {
 	unsigned int hmax_min;
 	unsigned int hmax;
 	unsigned int vmax;
+	bool follower;
 	u64 pix_rate;
 
 	struct mutex mutex;
@@ -760,8 +773,7 @@ static u32 imx585_get_format_code(struct imx585 *imx585, u32 code)
 	if (i >= ARRAY_SIZE(codes))
 		i = 0;
 
-	i = (i & ~3) | (imx585->vflip->val ? 2 : 0) |
-	    (imx585->hflip->val ? 1 : 0);
+	i &= ~3;
 
 	return codes[i];
 }
@@ -858,6 +870,24 @@ imx585_base_reg_list(const struct imx585_base_config *cfg, u32 fmt_code)
 	return imx585_code_is_10bit(fmt_code) ? &full_10 : &full_12;
 }
 
+static u32 imx585_win_left(struct imx585 *imx585)
+{
+	const struct v4l2_rect *crop = &imx585->crop;
+
+	if (!imx585->hflip->val)
+		return crop->left;
+	return IMX585_PIXEL_ARRAY_WIDTH - (crop->left + crop->width);
+}
+
+static u32 imx585_win_top(struct imx585 *imx585)
+{
+	const struct v4l2_rect *crop = &imx585->crop;
+
+	if (!imx585->vflip->val)
+		return crop->top;
+	return IMX585_PIXEL_ARRAY_HEIGHT - (crop->top + crop->height);
+}
+
 static int imx585_write_dynamic_regs(struct imx585 *imx585)
 {
 	const struct v4l2_rect *crop = &imx585->crop;
@@ -871,7 +901,7 @@ static int imx585_write_dynamic_regs(struct imx585 *imx585)
 		goto release_hold;
 
 	ret = imx585_write_reg(imx585, IMX585_REG_PIX_HST, 2,
-			       IMX585_PIXEL_ARRAY_LEFT + crop->left);
+			       IMX585_PIXEL_ARRAY_LEFT + imx585_win_left(imx585));
 	if (ret)
 		goto release_hold;
 
@@ -880,7 +910,7 @@ static int imx585_write_dynamic_regs(struct imx585 *imx585)
 		goto release_hold;
 
 	ret = imx585_write_reg(imx585, IMX585_REG_PIX_VST, 2,
-			       IMX585_PIXEL_ARRAY_TOP + crop->top);
+			       IMX585_PIXEL_ARRAY_TOP + imx585_win_top(imx585));
 	if (ret)
 		goto release_hold;
 
@@ -918,6 +948,11 @@ static unsigned int imx585_hmax_min(struct imx585 *imx585, u32 fmt_code)
 			    imx585->num_lanes);
 
 	hmax = (unsigned int)payload + IMX585_HMAX_LINE_OVERHEAD;
+
+	if (!imx585->base_cfg || !imx585->base_cfg->binning)
+		hmax = max(hmax, IMX585_HMAX_DELIVERY_BASE +
+			   DIV_ROUND_UP(imx585->crop.width,
+					IMX585_HMAX_DELIVERY_PX_DIV));
 
 	return max(hmax, (unsigned int)IMX585_HMAX_ABS_MIN);
 }
@@ -1033,6 +1068,11 @@ static int imx585_set_ctrl(struct v4l2_ctrl *ctrl)
 		imx585_adjust_exposure_range(imx585);
 	}
 
+	if (ctrl->id == CHC5SENSOR_CID_SYNC_FOLLOWER) {
+		imx585->follower = ctrl->val;
+		return 0;
+	}
+
 	if (pm_runtime_get_if_in_use(&client->dev) == 0)
 		return 0;
 
@@ -1140,6 +1180,16 @@ static int imx585_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 	struct imx585 *imx585 =
 		container_of(ctrl->handler, struct imx585, ctrl_handler);
 
+	if (ctrl->id == CHC5SENSOR_CID_LINE_TIME_PS) {
+		ctrl->val = (s32)div_u64((u64)imx585->hmax * 1000000000000ULL,
+					 IMX585_INTERNAL_CLOCK);
+		return 0;
+	}
+	if (ctrl->id == CHC5SENSOR_CID_FRAME_LINES) {
+		ctrl->val = imx585->vmax;
+		return 0;
+	}
+
 	switch (ctrl->id) {
 	case CHC5SENSOR_CID_OB_TOP:
 		ctrl->val = imx585->base_cfg && imx585->base_cfg->binning ?
@@ -1176,6 +1226,45 @@ static const struct v4l2_ctrl_ops imx585_ctrl_ops = {
 		.flags	= V4L2_CTRL_FLAG_READ_ONLY |			\
 			  V4L2_CTRL_FLAG_VOLATILE,			\
 	}
+
+static const struct v4l2_ctrl_config imx585_follow_ctrls[] = {
+	{
+		.ops   = &imx585_ctrl_ops,
+		.id    = CHC5SENSOR_CID_SYNC_FOLLOWER,
+		.name  = "Sync Follower",
+		.type  = V4L2_CTRL_TYPE_BOOLEAN,
+		.min   = 0,
+		.max   = 1,
+		.step  = 1,
+	}, {
+		.ops   = &imx585_ctrl_ops,
+		.id    = CHC5SENSOR_CID_FOLLOWER_XHS,
+		.name  = "Follower XHS",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = 0,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY,
+	}, {
+		.ops   = &imx585_ctrl_ops,
+		.id    = CHC5SENSOR_CID_LINE_TIME_PS,
+		.name  = "Line Time ps",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	}, {
+		.ops   = &imx585_ctrl_ops,
+		.id    = CHC5SENSOR_CID_FRAME_LINES,
+		.name  = "Frame Lines",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	},
+};
 
 static const struct v4l2_ctrl_config imx585_ob_ctrls[] = {
 	IMX585_OB_CTRL(CHC5SENSOR_CID_OB_LEFT,   "Optical Black Left"),
@@ -1634,6 +1723,17 @@ static int imx585_start_streaming(struct imx585 *imx585)
 	if (ret)
 		return ret;
 
+	ret = imx585_write_reg(imx585, IMX585_REG_EXTMODE, 1, imx585->follower ?
+			       IMX585_SYNC_FOLLOW_EXTMODE : IMX585_SYNC_LEADER_EXTMODE);
+	if (!ret)
+		ret = imx585_write_reg(imx585, IMX585_REG_XXS_DRV, 1, imx585->follower ?
+				       IMX585_SYNC_FOLLOW_DRV : IMX585_SYNC_LEADER_DRV);
+	if (!ret)
+		ret = imx585_write_reg(imx585, IMX585_REG_XXS_OUTSEL, 1, imx585->follower ?
+				       IMX585_SYNC_FOLLOW_OUTSEL : IMX585_SYNC_LEADER_OUTSEL);
+	if (ret)
+		return ret;
+
 	ret = imx585_write_reg(imx585, IMX585_REG_MODE_SELECT, 1,
 			       IMX585_MODE_STREAMING);
 	if (ret)
@@ -1716,6 +1816,9 @@ static int imx585_power_on(struct device *dev)
 			__func__);
 		return ret;
 	}
+
+	gpiod_set_value_cansleep(imx585->reset_gpio, 0);
+	usleep_range(10, 20);
 
 	ret = clk_prepare_enable(imx585->xclk);
 	if (ret) {
@@ -1857,7 +1960,7 @@ static int imx585_init_controls(struct imx585 *imx585)
 	int ret;
 
 	ctrl_hdlr = &imx585->ctrl_handler;
-	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 25);
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 29);
 	if (ret)
 		return ret;
 
@@ -1929,6 +2032,9 @@ static int imx585_init_controls(struct imx585 *imx585)
 
 		for (i = 0; i < ARRAY_SIZE(imx585_ob_ctrls); i++)
 			v4l2_ctrl_new_custom(ctrl_hdlr, &imx585_ob_ctrls[i], NULL);
+
+		for (i = 0; i < ARRAY_SIZE(imx585_follow_ctrls); i++)
+			v4l2_ctrl_new_custom(ctrl_hdlr, &imx585_follow_ctrls[i], NULL);
 	}
 
 	if (ctrl_hdlr->error) {
@@ -2088,7 +2194,7 @@ static int imx585_probe(struct i2c_client *client)
 	}
 
 	imx585->reset_gpio = devm_gpiod_get_optional(dev, "reset",
-						     GPIOD_OUT_HIGH);
+						     GPIOD_OUT_LOW);
 
 	ret = imx585_power_on(dev);
 	if (ret)

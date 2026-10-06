@@ -1,0 +1,174 @@
+{
+  "manifest_kind": "sensor_v1",
+  "manifest_version": 1,
+  "manifest": {
+    "version": "1.14.3",
+    "description": "IMX565 4-lane 12-bit, Xilinx colour pipeline (no AE/AWB, no 3x3 CCM)",
+    "vendor": "Sony",
+    "model": "IMX565"
+  },
+  "kernel": {
+    "module": "imx565",
+    "lanes": 4
+  },
+  "sensor": {
+    "lanes": "2,4",
+    "lanes_wired": 4,
+    "width": 4128,
+    "height": 3008,
+    "width_inc": 16,
+    "height_inc": 8,
+    "width_min": 608,
+    "height_min": 72,
+    "offset_x_inc": 8,
+    "offset_y_inc": 8,
+    "color_filter": "BayerRG",
+    "bit_depth": 12,
+    "chroma": "color"
+  },
+  "exposure": {
+    "min_us": 17,
+    "max_us": 1000000
+  },
+  "gain": {
+    "min_db_x10": 0,
+    "max_db_x10": 480,
+    "ref": 1024,
+    "reg_max": 480,
+    "mode": "linear"
+  },
+  "black_level": {
+    "min": 0,
+    "max": 240
+  },
+  "fps": {
+    "min_mhz": 100,
+    "max_mhz": 4000000
+  },
+  "binning": {
+    "max_h": 2,
+    "max_v": 2,
+    "width": 2064,
+    "height": 1496,
+    "width_min": 2064,
+    "height_min": 1496,
+    "height_inc": 8,
+    "mode": "drop"
+  },
+  "decimation": {
+    "max_h": 1,
+    "max_v": 1
+  },
+  "camio": {
+    "has_xvs": 1,
+    "xvs_out": 1,
+    "xvs_in": 1,
+    "has_xhs": 1,
+    "has_xtrig": 1,
+    "strobe": "tout0",
+    "shutter": "global",
+    "role": "pin",
+    "trigger": "xtrig"
+  },
+  "pixel_formats": [
+    {
+      "name": "Mono8",
+      "pfnc": 17301505
+    },
+    {
+      "name": "BayerRG8",
+      "pfnc": 17301513
+    },
+    {
+      "name": "BayerRG12",
+      "pfnc": 17825809
+    },
+    {
+      "name": "BayerRG12p",
+      "pfnc": 17563737
+    },
+    {
+      "name": "YUV422_8",
+      "pfnc": 34603058
+    },
+    {
+      "name": "YCbCr422_8",
+      "pfnc": 34603067
+    },
+    {
+      "name": "RGB565p",
+      "pfnc": 34603061
+    },
+    {
+      "name": "BGR8",
+      "pfnc": 35127317
+    }
+  ],
+  "uvc_modes": [
+    {
+      "w": 1920,
+      "h": 1080,
+      "fps": 55,
+      "src": "crop"
+    },
+    {
+      "w": 3840,
+      "h": 2160,
+      "fps": 18,
+      "src": "crop"
+    },
+    {
+      "w": 1280,
+      "h": 720,
+      "fps": 60,
+      "src": "crop"
+    },
+    {
+      "w": 640,
+      "h": 480,
+      "fps": 60,
+      "src": "crop"
+    }
+  ],
+  "test_patterns": [
+    {
+      "name": "Off"
+    },
+    {
+      "name": "SequencePattern1"
+    },
+    {
+      "name": "SequencePattern2"
+    },
+    {
+      "name": "GradationPattern"
+    }
+  ],
+  "ccm": "5664 -1072 -496 0 -1760 7238 -1382 0 318 -2261 6039 0",
+  "color_temp": {
+    "k3200": {
+      "r_x100": 155,
+      "b_x100": 288
+    },
+    "k4800": {
+      "r_x100": 206,
+      "b_x100": 204
+    },
+    "k5600": {
+      "r_x100": 230,
+      "b_x100": 182
+    },
+    "k6500": {
+      "r_x100": 250,
+      "b_x100": 164
+    }
+  },
+  "ccm_ct": {
+    "k3200": "5060 -200 -764 0 -2949 8015 -970 0 638 -3214 6672 0",
+    "k4800": "5482 -826 -560 0 -2071 7451 -1284 0 400 -2461 6157 0",
+    "k5600": "5664 -1072 -496 0 -1760 7238 -1382 0 318 -2261 6039 0",
+    "k6500": "5815 -1276 -443 0 -1502 7063 -1465 0 251 -2094 5939 0"
+  },
+  "bayer_order": "RGGB",
+  "bayer_flip_moves": "hv"
+}

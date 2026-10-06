@@ -1252,6 +1252,7 @@ struct macb_zptp_follow {
 	u64 last_window_ns;
 	u64 min_window_ns;
 	u32 samples, rejected, steps;
+	unsigned long steered;
 };
 #endif
 

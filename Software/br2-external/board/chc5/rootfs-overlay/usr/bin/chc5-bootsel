@@ -1,0 +1,119 @@
+#!/bin/sh
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-bootsel - switch the camera between booting from QSPI and from the SD card
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+DISK=/dev/mmcblk0
+CARD=/dev/mmcblk0p1
+WORK=/run/chc5-bootsel
+FWLOCK="-l /run"
+
+die() { echo "chc5-bootsel: $*" >&2; exit 1; }
+
+running() {
+	case " $(cat /proc/cmdline) " in
+	*" root=/dev/mmcblk0p"*) echo sd ;;
+	*) echo qspi ;;
+	esac
+}
+
+card_mount() {
+	[ -b "$CARD" ] || { echo "no first partition" > "$WORK/mount.err"; return 1; }
+	mkdir -p "$WORK/card"
+	mountpoint -q "$WORK/card" && umount "$WORK/card" 2>/dev/null
+	if ! err=$(mount -t vfat -o "${1:-rw}" "$CARD" "$WORK/card" 2>&1); then
+		err=$(printf '%s\n' "$err" | grep -v -e '(hint)' -e 'daemon-reload' | head -n 1)
+		echo "${err:-mount failed}" > "$WORK/mount.err"
+		return 1
+	fi
+	echo "$WORK/card"
+}
+
+card_umount() {
+	sync
+	mountpoint -q "$WORK/card" && umount "$WORK/card"
+}
+
+card_fwcfg() {
+	a=$(wc -c < "$1/uboot.env" 2>/dev/null || echo 0)
+	b=$(wc -c < "$1/uboot-redund.env" 2>/dev/null || echo 0)
+	if [ "$a" = 131072 ] && [ "$b" != 131072 ]; then
+		cp "$1/uboot.env" "$1/uboot-redund.env" || return 1
+	elif [ "$b" = 131072 ] && [ "$a" != 131072 ]; then
+		cp "$1/uboot-redund.env" "$1/uboot.env" || return 1
+	fi
+	[ -f "$1/uboot.env" ] && [ -f "$1/uboot-redund.env" ] || return 1
+	printf '%s 0x0000 0x20000\n%s 0x0000 0x20000\n' "$1/uboot.env" "$1/uboot-redund.env" > "$WORK/fw_env.card"
+	echo "$WORK/fw_env.card"
+}
+
+card_kind() {
+	[ -b "$DISK" ] || { echo none; return; }
+	[ -b "$CARD" ] || { echo other; return; }
+	m=$(card_mount ro) || { echo other; return; }
+	if [ -f "$m/chc5sd.scr" ]; then echo boot; else echo other; fi
+	card_umount
+}
+
+last_sd() {
+	for a in $(cat /proc/cmdline); do
+		case "$a" in chc5.sd=*) echo "${a#chc5.sd=}"; return ;; esac
+	done
+}
+
+status() {
+	r=$(running)
+	echo "running=$r"
+	echo "last_sd=$(last_sd)"
+	if [ "$r" = qspi ]; then
+		[ "$(fw_printenv $FWLOCK -n sd_boot 2>/dev/null)" = 1 ] && echo "sd_boot=1" || echo "sd_boot=0"
+		echo "card=$(card_kind)"
+	else
+		echo "sd_boot=1"
+		echo "card=boot"
+		[ "$(fw_printenv $FWLOCK -n qspi_boot 2>/dev/null)" = 1 ] && echo "qspi_boot=1" || echo "qspi_boot=0"
+	fi
+}
+
+to_sd() {
+	if [ "$(running)" = sd ]; then
+		fw_setenv $FWLOCK qspi_boot || die "cannot write the card env"
+		echo "Running from the SD card; a pending switch to QSPI is cancelled."
+		return
+	fi
+	[ -b "$DISK" ] || die "no SD card"
+	m=$(card_mount) || die "cannot mount the SD card's boot partition ($(cat "$WORK/mount.err" 2>/dev/null)) - not a CHC5 SD boot card?"
+	if [ ! -f "$m/chc5sd.scr" ]; then
+		card_umount
+		die "not a CHC5 SD boot card (no chc5sd.scr)"
+	fi
+	if cfg=$(card_fwcfg "$m") && [ "$(fw_printenv $FWLOCK -c "$cfg" -n qspi_boot 2>/dev/null)" = 1 ]; then
+		fw_setenv $FWLOCK -c "$cfg" qspi_boot || { card_umount; die "cannot clear qspi_boot on the card"; }
+	fi
+	card_umount
+	fw_setenv $FWLOCK sd_boot 1 || die "cannot write the QSPI env"
+	echo "SD boot on: the camera starts from the SD card after the next reboot."
+}
+
+to_qspi() {
+	if [ "$(running)" = sd ]; then
+		fw_setenv $FWLOCK qspi_boot 1 || die "cannot write the card env"
+		echo "The camera starts from QSPI after the next reboot (SD boot is switched off)."
+		return
+	fi
+	fw_setenv $FWLOCK sd_boot || die "cannot write the QSPI env"
+	echo "SD boot off: the camera starts from QSPI."
+}
+
+mkdir -p "$WORK"
+exec 9>"$WORK/lock"
+flock 9
+case "$1" in
+status) status ;;
+sd)     to_sd ;;
+qspi)   to_qspi ;;
+*)      echo "usage: chc5-bootsel status|sd|qspi" >&2; exit 2 ;;
+esac

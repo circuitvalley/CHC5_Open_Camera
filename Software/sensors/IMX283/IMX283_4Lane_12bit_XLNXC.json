@@ -2,8 +2,8 @@
   "manifest_kind": "sensor_v1",
   "manifest_version": 1,
   "manifest": {
-    "version": "1.8.0",
-    "description": "IMX283, 4 lanes, 12-bit, Xilinx colour pipeline (ST30)",
+    "version": "1.8.5",
+    "description": "IMX283 4-lane 12-bit, Xilinx colour pipeline (no AE/AWB, no 3x3 CCM)",
     "vendor": "Sony",
     "model": "IMX283"
   },
@@ -22,7 +22,7 @@
     "bit_depth": 12,
     "chroma": "color",
     "width_min": 336,
-    "height_min": 1864,
+    "height_min": 1848,
     "offset_x_inc": 12,
     "offset_y_inc": 4
   },
@@ -51,7 +51,7 @@
     "width": 2736,
     "height": 1824,
     "width_min": 432,
-    "height_min": 928
+    "height_min": 924
   },
   "decimation": {
     "max_h": 1,
@@ -66,7 +66,7 @@
     "strobe": "none",
     "shutter": "rolling",
     "role": "i2c",
-    "trigger": "xvs"
+    "trigger": "none"
   },
   "pixel_formats": [
     {
@@ -145,5 +145,32 @@
     {
       "name": "VerticalColorBars"
     }
-  ]
+  ],
+  "ccm": "5581 -1223 -262 0 -1164 5975 -715 0 105 -2080 6071 0",
+  "color_temp": {
+    "k3200": {
+      "r_x100": 118,
+      "b_x100": 279
+    },
+    "k4800": {
+      "r_x100": 165,
+      "b_x100": 197
+    },
+    "k5600": {
+      "r_x100": 185,
+      "b_x100": 178
+    },
+    "k6500": {
+      "r_x100": 202,
+      "b_x100": 163
+    }
+  },
+  "ccm_ct": {
+    "k3200": "4997 -373 -528 0 -2048 6538 -394 0 117 -3043 7022 0",
+    "k4800": "5408 -994 -318 0 -1377 6123 -650 0 121 -2253 6228 0",
+    "k5600": "5581 -1223 -262 0 -1164 5975 -715 0 105 -2080 6071 0",
+    "k6500": "5725 -1413 -216 0 -988 5852 -768 0 92 -1937 5941 0"
+  },
+  "bayer_order": "RGGB",
+  "bayer_flip_moves": "none"
 }

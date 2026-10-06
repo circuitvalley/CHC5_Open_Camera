@@ -33,6 +33,7 @@
 #include "media_pipeline.h"
 #include "config.h"
 #include "genconv.h"
+#include "camio_sync.h"
 
 #define ENT_SENSOR       0
 #define ENT_CSI2RX       1
@@ -85,6 +86,8 @@ struct sensor_params {
     int32_t  ob_left, ob_top, ob_right, ob_bottom;
 
     int32_t  ob_on_image_dt;
+
+    int32_t  line_periods;
 
     bool     fixed_valid;
     bool     mode_valid;
@@ -278,6 +281,29 @@ static void sensor_query_ob(void)
     if (g_sensor.ob_right  < 0) g_sensor.ob_right  = 0;
     if (g_sensor.ob_bottom < 0) g_sensor.ob_bottom = 0;
 
+    int32_t mask;
+    if ((g_sensor.ob_left || g_sensor.ob_top ||
+         g_sensor.ob_right || g_sensor.ob_bottom) &&
+        subdev_get_ctrl(fd, CHC5SENSOR_CID_OB_ON_IMAGE_MASK, &mask) == 0) {
+        LOG_INFO("sensor: transmits optical black l=%d t=%d r=%d b=%d "
+                 "(wire pixels, this mode), per band -- l %s, t %s, r %s, b %s",
+                 g_sensor.ob_left, g_sensor.ob_top,
+                 g_sensor.ob_right, g_sensor.ob_bottom,
+                 (mask & CHC5SENSOR_OB_MASK_LEFT)   ? "image DT" : "own DT",
+                 (mask & CHC5SENSOR_OB_MASK_TOP)    ? "image DT" : "own DT",
+                 (mask & CHC5SENSOR_OB_MASK_RIGHT)  ? "image DT" : "own DT",
+                 (mask & CHC5SENSOR_OB_MASK_BOTTOM) ? "image DT" : "own DT");
+        if (!(mask & CHC5SENSOR_OB_MASK_LEFT))   g_sensor.ob_left   = 0;
+        if (!(mask & CHC5SENSOR_OB_MASK_TOP))    g_sensor.ob_top    = 0;
+        if (!(mask & CHC5SENSOR_OB_MASK_RIGHT))  g_sensor.ob_right  = 0;
+        if (!(mask & CHC5SENSOR_OB_MASK_BOTTOM)) g_sensor.ob_bottom = 0;
+        g_sensor.ob_on_image_dt = (mask & (CHC5SENSOR_OB_MASK_LEFT |
+                                           CHC5SENSOR_OB_MASK_TOP |
+                                           CHC5SENSOR_OB_MASK_RIGHT |
+                                           CHC5SENSOR_OB_MASK_BOTTOM)) != 0;
+        return;
+    }
+
     if (g_sensor.ob_left || g_sensor.ob_top ||
         g_sensor.ob_right || g_sensor.ob_bottom)
         LOG_INFO("sensor: transmits optical black l=%d t=%d r=%d b=%d "
@@ -397,6 +423,10 @@ static void sensor_query_mode_params(uint32_t width)
         g_sensor.vblank_max = 0xFFFF;
         LOG_WARN("sensor: cannot query VBLANK range, using fallback");
     }
+
+    g_sensor.line_periods = 0;
+    (void)subdev_get_ctrl(fd, CHC5SENSOR_CID_LINE_PERIODS,
+                          &g_sensor.line_periods);
 
     if (subdev_query_ctrl(fd, V4L2_CID_EXPOSURE,
                           &g_sensor.exposure_min, &g_sensor.exposure_max, NULL) < 0) {
@@ -1779,6 +1809,26 @@ static int apply_flip_axis(int fd, uint32_t id, int want, const char *axis)
     return subdev_set_ctrl(fd, id, want);
 }
 
+static int apply_test_pattern(int fd, int32_t want)
+{
+    int32_t lo, hi;
+
+    if (!subdev_has_ctrl(fd, V4L2_CID_TEST_PATTERN)) {
+        if (!want)
+            return 0;
+        LOG_WARN("media_pipeline: sensor has no test pattern -- pattern %d "
+                 "NOT applied", want);
+        return -1;
+    }
+    if (subdev_query_ctrl(fd, V4L2_CID_TEST_PATTERN, &lo, &hi, NULL) == 0 &&
+        (want < lo || want > hi)) {
+        LOG_WARN("media_pipeline: test pattern %d outside the sensor's menu "
+                 "%d..%d -- NOT applied", want, lo, hi);
+        return -1;
+    }
+    return subdev_set_ctrl(fd, V4L2_CID_TEST_PATTERN, want);
+}
+
 static int subdev_set_ext_ctrl(int fd, uint32_t id, int32_t value)
 {
     if (fd < 0)
@@ -2047,34 +2097,6 @@ int media_pipeline_set_aestats_fmt(uint32_t width, uint32_t height)
     return ret;
 }
 
-#define CHC5WBG_PHASE_RGGB    0xE4
-#define CHC5WBG_PHASE_GRBG    0xB1
-#define CHC5WBG_PHASE_GBRG    0x4E
-#define CHC5WBG_PHASE_BGGR    0x1B
-
-static uint32_t bayer_code_to_phase_map(uint32_t code)
-{
-    switch (code) {
-    case MEDIA_BUS_FMT_SGRBG8_1X8:
-    case MEDIA_BUS_FMT_SGRBG10_1X10:
-    case MEDIA_BUS_FMT_SGRBG12_1X12:
-    case MEDIA_BUS_FMT_SGRBG14_1X14:
-        return CHC5WBG_PHASE_GRBG;
-    case MEDIA_BUS_FMT_SGBRG8_1X8:
-    case MEDIA_BUS_FMT_SGBRG10_1X10:
-    case MEDIA_BUS_FMT_SGBRG12_1X12:
-    case MEDIA_BUS_FMT_SGBRG14_1X14:
-        return CHC5WBG_PHASE_GBRG;
-    case MEDIA_BUS_FMT_SBGGR8_1X8:
-    case MEDIA_BUS_FMT_SBGGR10_1X10:
-    case MEDIA_BUS_FMT_SBGGR12_1X12:
-    case MEDIA_BUS_FMT_SBGGR14_1X14:
-        return CHC5WBG_PHASE_BGGR;
-    default:
-        return CHC5WBG_PHASE_RGGB;
-    }
-}
-
 static int bayer_code_to_cfa_order(uint32_t code)
 {
     switch (code) {
@@ -2095,12 +2117,36 @@ static int bayer_code_to_cfa_order(uint32_t code)
     }
 }
 
-static void check_cfa_order(uint32_t raw_mbus)
+static void check_cfa_order(uint32_t raw_mbus, bool rev_x, bool rev_y, bool binned)
 {
     int drv = bayer_code_to_cfa_order(raw_mbus);
     static const char *nm[] = { "?", "BayerRG", "BayerGB", "BayerGR", "BayerBG" };
+    static const int from_table[4] = { 1, 3, 2, 4 };
 
-    if (g_bayer_order == 0 || drv == 0)
+    if (drv == 0)
+        return;
+
+    if (g_cfa_table & 0x80) {
+        unsigned o = binned ? ((unsigned)g_cfa_table >> 2) & 3u
+                            : (unsigned)g_cfa_table & 3u;
+        if (rev_x && (g_cfa_table & 0x10))
+            o ^= 1u;
+        if (rev_y && (g_cfa_table & 0x20))
+            o ^= 2u;
+        if (from_table[o] != drv)
+            LOG_ERR("media_pipeline: CFA MISMATCH -- the archive's CFA table "
+                    "(cfa_table 0x%02X) says %s for ReverseX=%d ReverseY=%d %s, "
+                    "but the sensor driver reports %s (mbus 0x%04X).  U3V labels "
+                    "raw Bayer from the table, the fabric debayers from the "
+                    "driver: fix the manifest's bayer_order / binning.bayer_order "
+                    "/ bayer_flip_moves, or the driver.",
+                    g_cfa_table, nm[from_table[o]], rev_x, rev_y,
+                    binned ? "binned" : "unbinned", nm[drv], raw_mbus);
+        return;
+    }
+
+    if (g_bayer_order == 0 || rev_x || rev_y || binned ||
+        g_orient_hflip || g_orient_vflip)
         return;
 
     if (g_bayer_order != drv)
@@ -2129,22 +2175,23 @@ void media_pipeline_refresh_cfa_order(void)
                               ? bayer_code_to_cfa_order(sfmt.format.code) : 0);
 }
 
-static void set_wbg_phase_map(uint32_t raw_mbus)
+static void check_wbg_phase(uint32_t raw_mbus)
 {
-    int fd = graph_ctrl_fd(CHC5WBG_CID_PHASE_MAP);
-    uint32_t pm;
-
-    if (fd < 0)
+    int fd = graph_slot_fd(ENT_WBG);
+    int want = bayer_code_to_cfa_order(raw_mbus);
+    if (fd < 0 || want == 0)
         return;
 
-    pm = bayer_code_to_phase_map(raw_mbus);
-    if (subdev_set_ctrl(fd, CHC5WBG_CID_PHASE_MAP, (int32_t)pm) != 0) {
-        LOG_WARN("media_pipeline: wb_gain PHASE_MAP 0x%02X not applied "
-                 "(colour channels may be swapped)", pm);
+    struct v4l2_subdev_format f;
+    memset(&f, 0, sizeof(f));
+    f.which = V4L2_SUBDEV_FORMAT_ACTIVE;
+    f.pad   = 0;
+    if (ioctl(fd, VIDIOC_SUBDEV_G_FMT, &f) < 0)
         return;
-    }
-    LOG_INFO("media_pipeline: wb_gain PHASE_MAP=0x%02X (sensor code 0x%04X)",
-             pm, raw_mbus);
+    if (bayer_code_to_cfa_order(f.format.code) != want)
+        LOG_WARN("media_pipeline: wb_gain sink carries code 0x%04X but the sensor "
+                 "sends 0x%04X -- the white-balance gains land on the wrong "
+                 "Bayer channels", f.format.code, raw_mbus);
 }
 #define CHC5WBG_GAIN_ONE      256
 #define CHC5WBG_GAIN_MAX      0xFFFF
@@ -2259,14 +2306,8 @@ int media_pipeline_set_format(const imgsensor_cfg_t *cfg)
         uint32_t winc = g_width_inc  ? g_width_inc  : 8u;
         uint32_t hinc = g_height_inc ? g_height_inc : 2u;
         if (!g_sensor_width || !g_sensor_height || !g_width_inc || !g_height_inc) {
-            static bool warned, noted;
-            if (!g_sensor_caps_looked) {
-                if (!noted) {
-                    noted = true;
-                    LOG_INFO("media_pipeline: sensor_caps not read yet -- the "
-                             "start-up setup uses the default steps %u/%u", winc, hinc);
-                }
-            } else if (!warned) {
+            static bool warned;
+            if (!warned) {
                 warned = true;
                 LOG_WARN("media_pipeline: sensor_caps has no geometry "
                          "(pre-update file?) -- using legacy steps %u/%u and "
@@ -2529,9 +2570,8 @@ int media_pipeline_set_format(const imgsensor_cfg_t *cfg)
     g_prog_width  = w;
     g_prog_height = h;
 
-    set_wbg_phase_map(raw_mbus);
-    if (!config_get_reverse_x() && !config_get_reverse_y() && !cfg->binning)
-        check_cfa_order(raw_mbus);
+    check_cfa_order(raw_mbus, config_get_reverse_x(), config_get_reverse_y(),
+                    ((cfg->binning >> 4) & 0x0Fu) != 0u && (cfg->binning & 0x0Fu) != 0u);
     config_set_live_cfa_order(bayer_code_to_cfa_order(raw_mbus));
 
     media_pipeline_set_aestats_fmt(w, h);
@@ -2545,6 +2585,8 @@ int media_pipeline_set_format(const imgsensor_cfg_t *cfg)
         };
         ret |= graph_propagate_formats(&fctx);
     }
+
+    check_wbg_phase(raw_mbus);
 
     if (graph_slot_fd(ENT_VIPP) >= 0)
         ret |= video_set_format(graph_slot_fd(ENT_VIPP), 32, 32,
@@ -2575,6 +2617,168 @@ int media_pipeline_set_pixpack_format(uint32_t pfnc_usb, uint32_t pfnc_eth)
     return ret;
 }
 
+int media_pipeline_can_follow(void)
+{
+    int fd = graph_slot_fd(ENT_SENSOR);
+    int ok;
+
+    if (fd < 0)
+        return 0;
+    pthread_mutex_lock(&g_sensor_lock);
+    ok = subdev_query_ctrl(fd, CHC5SENSOR_CID_SYNC_FOLLOWER, NULL, NULL, NULL) == 0;
+    pthread_mutex_unlock(&g_sensor_lock);
+    return ok;
+}
+
+int media_pipeline_wait_sensor_off(int timeout_ms)
+{
+    int fd = graph_slot_fd(ENT_SENSOR);
+    struct stat st;
+    char path[96], buf[16];
+
+    if (fd < 0 || fstat(fd, &st) < 0)
+        return -1;
+    snprintf(path, sizeof path, "/sys/dev/char/%u:%u/device/power/runtime_status",
+             major(st.st_rdev), minor(st.st_rdev));
+    for (int t = 0; t <= timeout_ms; t += 2) {
+        FILE *f = fopen(path, "r");
+        if (!f)
+            return -1;
+        int n = fgets(buf, sizeof buf, f) ? 1 : 0;
+        fclose(f);
+        if (n && !strncmp(buf, "suspended", 9))
+            return 0;
+        usleep(2000);
+    }
+    return -1;
+}
+
+int media_pipeline_set_sync_follower(int on)
+{
+    static int last = 0;
+    int fd = graph_slot_fd(ENT_SENSOR);
+    int ret = 0;
+
+    if (fd < 0)
+        return on ? -1 : 0;
+
+    pthread_mutex_lock(&g_sensor_lock);
+    if (subdev_query_ctrl(fd, CHC5SENSOR_CID_SYNC_FOLLOWER,
+                          NULL, NULL, NULL) < 0) {
+        ret = on ? -1 : 0;
+    } else if (subdev_set_ctrl(fd, CHC5SENSOR_CID_SYNC_FOLLOWER, on ? 1 : 0) < 0) {
+        ret = -1;
+    } else if (!!on != last) {
+        LOG_INFO("sensor: sync %s", on ? "follower" : "leader");
+        last = !!on;
+        ret = 1;
+    }
+    pthread_mutex_unlock(&g_sensor_lock);
+    return ret;
+}
+
+int media_pipeline_follower_xhs(void)
+{
+    int fd = graph_slot_fd(ENT_SENSOR);
+    int32_t v = 0;
+
+    if (fd < 0)
+        return 0;
+    pthread_mutex_lock(&g_sensor_lock);
+    if (subdev_get_ctrl(fd, CHC5SENSOR_CID_FOLLOWER_XHS, &v) < 0)
+        v = 0;
+    pthread_mutex_unlock(&g_sensor_lock);
+    return v ? 1 : 0;
+}
+
+int media_pipeline_can_trigger(void)
+{
+    int fd = graph_slot_fd(ENT_SENSOR);
+    int ok;
+
+    if (fd < 0)
+        return 0;
+    pthread_mutex_lock(&g_sensor_lock);
+    ok = subdev_query_ctrl(fd, CHC5SENSOR_CID_TRIGGER_MODE, NULL, NULL, NULL) == 0;
+    pthread_mutex_unlock(&g_sensor_lock);
+    return ok;
+}
+
+int media_pipeline_line_timing(uint32_t *line_ps, uint32_t *frame_lines)
+{
+    int fd = graph_slot_fd(ENT_SENSOR);
+    int32_t l = 0, n = 0;
+    int ret = -1;
+
+    if (fd < 0)
+        return -1;
+    pthread_mutex_lock(&g_sensor_lock);
+    if (subdev_get_ctrl(fd, CHC5SENSOR_CID_LINE_TIME_PS, &l) == 0 &&
+        subdev_get_ctrl(fd, CHC5SENSOR_CID_FRAME_LINES, &n) == 0 &&
+        l > 0 && n > 0) {
+        *line_ps = (uint32_t)l;
+        *frame_lines = (uint32_t)n;
+        ret = 0;
+    } else if (g_sensor.mode_valid && g_sensor.fixed_valid && g_sensor.pixel_rate &&
+               g_sensor.line_length && g_ctrl_cache.valid) {
+        uint64_t ps = (uint64_t)g_sensor.line_length * 1000000000000ull / g_sensor.pixel_rate;
+        uint32_t h = g_sensor.active_height ? g_sensor.active_height : 0;
+
+        if (ps && ps <= 0xFFFFFFFFull && h) {
+            *line_ps = (uint32_t)ps;
+            *frame_lines = h + (uint32_t)g_ctrl_cache.vblank;
+            ret = 0;
+        }
+    }
+    pthread_mutex_unlock(&g_sensor_lock);
+    return ret;
+}
+
+static int g_trig_fast;
+
+static void trig_width_sync_locked(int fd, uint32_t exposure_us)
+{
+    int32_t off = 0;
+
+    if (!g_trig_fast) {
+        camio_sync_set_exposure(exposure_us, 0);
+        return;
+    }
+    if (subdev_get_ctrl(fd, CHC5SENSOR_CID_TRIGGER_EXP_OFFSET_NS, &off) < 0 || off < 0) {
+        LOG_WARN("sensor: no trigger exposure offset -- XTRIG1 width uncorrected");
+        off = 0;
+    }
+    camio_sync_set_exposure(exposure_us, (uint32_t)off);
+}
+
+int media_pipeline_set_trigger_mode(int fast)
+{
+    int fd = graph_slot_fd(ENT_SENSOR);
+    int ret = 0;
+
+    pthread_mutex_lock(&g_sensor_lock);
+    if (fd < 0 || subdev_query_ctrl(fd, CHC5SENSOR_CID_TRIGGER_MODE,
+                                    NULL, NULL, NULL) < 0) {
+        ret = fast ? -1 : 0;
+        g_trig_fast = 0;
+    } else if (subdev_set_ctrl(fd, CHC5SENSOR_CID_TRIGGER_MODE,
+                               fast ? CHC5SENSOR_TRIGGER_FAST
+                                    : CHC5SENSOR_TRIGGER_FREE_RUN) < 0) {
+        ret = -1;
+        g_trig_fast = 0;
+    } else {
+        if (fast != g_trig_fast) {
+            LOG_INFO("sensor: trigger mode %s", fast ? "fast (XTRIG1 width)" : "free run");
+            ret = 1;
+        }
+        g_trig_fast = fast;
+    }
+    camio_sync_set_width_auto(g_trig_fast);
+    trig_width_sync_locked(fd, 0);
+    pthread_mutex_unlock(&g_sensor_lock);
+    return ret;
+}
+
 int media_pipeline_set_sensor_controls(const imgsensor_cfg_t *cfg)
 {
     int fd = graph_slot_fd(ENT_SENSOR);
@@ -2597,14 +2801,22 @@ int media_pipeline_set_sensor_controls(const imgsensor_cfg_t *cfg)
     int32_t hblank_max = g_sensor.mode_valid ? g_sensor.hblank_max : hblank_min;
 
     unsigned k_lines = 1;
-    if (g_sensor.mode_valid && ah > 0 && g_sensor.vblank_min >= 0) {
+    bool k_declared = false;
+    if (g_sensor.mode_valid && g_sensor.line_periods >= 1 &&
+        g_sensor.line_periods <= 4) {
+        k_lines = (unsigned)g_sensor.line_periods;
+        k_declared = true;
+    } else if (g_sensor.mode_valid && ah > 0 && g_sensor.vblank_min >= 0) {
         double ratio = ((double)ah + (double)g_sensor.vblank_min)
                      / (double)ah;
         unsigned k = (unsigned)(ratio + 0.5);
         if (k >= 2 && k <= 4 && ratio >= (double)k - 0.35 && ratio <= (double)k + 0.35)
             k_lines = k;
     }
-    if (k_lines != 1)
+    if (k_lines != 1 && k_declared)
+        LOG_INFO("sensor: %u line periods per output line (declared by the driver) "
+                 "-- bandwidth hblank divided by %u", k_lines, k_lines);
+    else if (k_lines != 1)
         LOG_INFO("sensor: %u line periods per output line (height %u + vblank_min %d) "
                  "-- bandwidth hblank divided by %u",
                  k_lines, ah, g_sensor.vblank_min, k_lines);
@@ -2652,8 +2864,7 @@ int media_pipeline_set_sensor_controls(const imgsensor_cfg_t *cfg)
     uint32_t vblank;
     uint32_t ll;
 
-    float fps_f = config_get_fps_f();
-    if (fps_f <= 0.0f) fps_f = (float)cfg->fps;
+    float fps_f = (float)cfg->fps_mhz / 1000.0f;
 
 #ifdef TIMING_MAXIMIZE_HBLANK
     vblank = (uint32_t)g_sensor.vblank_min;
@@ -2707,7 +2918,7 @@ int media_pipeline_set_sensor_controls(const imgsensor_cfg_t *cfg)
         exp_lines = (uint32_t)g_sensor.exposure_min;
 
     uint32_t fl_exp = exp_lines + g_sensor.exposure_offset;
-    if (fl_exp > ah) {
+    if (fl_exp > ah && !camio_sync_wants_follower()) {
         uint32_t vblank_exp = fl_exp - ah;
         if (vblank_exp > vblank) vblank = vblank_exp;
     }
@@ -2771,6 +2982,7 @@ int media_pipeline_set_sensor_controls(const imgsensor_cfg_t *cfg)
         ret |= subdev_set_ctrl(fd, V4L2_CID_EXPOSURE, (int32_t)exp_lines);
         g_ctrl_cache.exposure = (int32_t)exp_lines;
     }
+    trig_width_sync_locked(fd, ae_owns_exp ? 0 : cfg->exposure_us);
 
     if (!ae_owns_gain &&
         (!g_ctrl_cache.valid || g_ctrl_cache.gain_code != gain_code)) {
@@ -2779,7 +2991,7 @@ int media_pipeline_set_sensor_controls(const imgsensor_cfg_t *cfg)
     }
 
     if (!g_ctrl_cache.valid || g_ctrl_cache.test_pattern != (int32_t)cfg->test_pattern) {
-        ret |= subdev_set_ctrl(fd, V4L2_CID_TEST_PATTERN, (int32_t)cfg->test_pattern);
+        ret |= apply_test_pattern(fd, (int32_t)cfg->test_pattern);
         g_ctrl_cache.test_pattern = (int32_t)cfg->test_pattern;
     }
 
@@ -2913,6 +3125,41 @@ int media_pipeline_set_sensor_controls(const imgsensor_cfg_t *cfg)
     pthread_mutex_unlock(&g_sensor_lock);
     return ret;
 }
+
+int media_pipeline_set_exposure(uint32_t exposure_us)
+{
+    pthread_mutex_lock(&g_sensor_lock);
+    uint32_t ll = g_sensor.mode_valid ? g_sensor.line_length : 0x31C4;
+    uint64_t pr = g_sensor.fixed_valid ? g_sensor.pixel_rate : 840000000ULL;
+    double line_us = (double)ll / (double)pr * 1e6;
+    if (line_us <= 0.0) line_us = 1.0;
+    uint32_t lines = (uint32_t)(exposure_us / line_us + 0.5);
+    if ((int32_t)lines < g_sensor.exposure_min)
+        lines = (uint32_t)g_sensor.exposure_min;
+    if ((int32_t)lines > g_sensor.exposure_max)
+        lines = (uint32_t)g_sensor.exposure_max;
+    int ret = subdev_set_ctrl(graph_slot_fd(ENT_SENSOR),
+                              V4L2_CID_EXPOSURE, (int32_t)lines);
+    if (ret == 0)
+        g_ctrl_cache.exposure = (int32_t)lines;
+    trig_width_sync_locked(graph_slot_fd(ENT_SENSOR), exposure_us);
+    pthread_mutex_unlock(&g_sensor_lock);
+    return ret;
+}
+
+int media_pipeline_set_gain(uint16_t gain_u16)
+{
+    pthread_mutex_lock(&g_sensor_lock);
+    double gain_db = gain_code_to_db(gain_u16);
+    int32_t gc = gain_db_to_code(gain_db, g_sensor.gain_min, gain_code_max());
+    int ret = subdev_set_ctrl(graph_slot_fd(ENT_SENSOR),
+                              V4L2_CID_ANALOGUE_GAIN, gc);
+    if (ret == 0)
+        g_ctrl_cache.gain_code = gc;
+    pthread_mutex_unlock(&g_sensor_lock);
+    return ret;
+}
+
 int32_t media_pipeline_get_gain_max(void)
 {
     return gain_code_max();
@@ -2987,6 +3234,7 @@ int media_pipeline_stream_on(void)
 {
     for (int attempt = 1; attempt <= 3; attempt++) {
         if (stream_on_once() == 0) {
+            camio_sync_sensor_running(1);
             apply_ccm();
             media_pipeline_apply_gamma();
             media_pipeline_set_wb_gains(config_get_wb_ratio(0),
@@ -3005,6 +3253,8 @@ int media_pipeline_stream_on(void)
 
 int media_pipeline_stream_off(void)
 {
+    camio_sync_sensor_running(0);
+
     int fd = graph_slot_fd(ENT_VIPP);
     if (fd < 0)
         return -1;

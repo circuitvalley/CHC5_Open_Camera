@@ -252,3 +252,40 @@ int camcfgd_get_config(struct camcfg_state_s *out)
     pthread_mutex_unlock(&g_client_lock);
     return ret;
 }
+
+int camcfgd_trigger_event(uint8_t ev)
+{
+    pthread_mutex_lock(&g_client_lock);
+    if (ensure_connected() < 0) { pthread_mutex_unlock(&g_client_lock); return -1; }
+
+    int ret = send_msg(IPC_MSG_TRIGGER_EVENT, &ev, 1);
+    if (ret == 0) {
+        uint8_t rtype;
+        uint16_t rlen;
+        char err[64];
+        ret = recv_reply(&rtype, err, &rlen, (uint16_t)sizeof(err));
+        if (ret == 0 && rtype != IPC_MSG_REPLY_OK)
+            ret = -1;
+    }
+
+    pthread_mutex_unlock(&g_client_lock);
+    return ret;
+}
+
+int camcfgd_get_camio_regs(struct camcfgd_camio_regs *out)
+{
+    pthread_mutex_lock(&g_client_lock);
+    if (ensure_connected() < 0) { pthread_mutex_unlock(&g_client_lock); return -1; }
+
+    int ret = send_msg(IPC_MSG_GET_CAMIO_REGS, NULL, 0);
+    if (ret == 0) {
+        uint8_t rtype;
+        uint16_t rlen;
+        ret = recv_reply(&rtype, out, &rlen, (uint16_t)sizeof(*out));
+        if (rtype != IPC_MSG_REPLY_OK || rlen != sizeof(*out))
+            ret = -1;
+    }
+
+    pthread_mutex_unlock(&g_client_lock);
+    return ret;
+}

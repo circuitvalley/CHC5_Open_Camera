@@ -27,6 +27,9 @@
 #include <uapi/linux/chc5-v4l2-controls.h>
 
 #define IMX565_REG_STANDBY		0x3000
+#define IMX565_REG_TRIGMODE		0x3400
+#define IMX565_TRIGMODE_FAST		0x02
+#define IMX565_TRIG_EXP_OFFSET_NS	2530
 #define IMX565_STANDBY_POR		0x01
 #define IMX565_HMAX_POR			0x0081
 #define IMX565_REG_XMSTA		0x3010
@@ -78,6 +81,10 @@
 #define IMX565_EXPOSURE_DEFAULT		1000
 
 #define IMX565_REG_SYNCSEL		0x343c
+#define IMX565_REG_TOUT0SEL		0x3436
+#define IMX565_TOUT0SEL_EXPOSURE		0x01
+#define IMX565_SYNCSEL_DRIVEN		0xc0
+#define IMX565_SYNCSEL_HIZ		0xf0
 
 #define IMX565_REG_GAIN			0x3514
 #define IMX565_GAIN_DB10_PER_CODE	1
@@ -609,6 +616,9 @@ struct imx565 {
 	struct v4l2_rect compose;
 
 	bool subsample;
+	u8 trig_mode;
+	bool follower;
+	s8 latched_follower;
 
 	unsigned int hmax_min;
 	unsigned int hmax;
@@ -863,12 +873,44 @@ static void imx565_clamp_crop(struct v4l2_rect *crop, u32 min_w)
 	crop->top = rounddown(crop->top, IMX565_CROP_TOP_STEP);
 }
 
+static bool imx565_roi_is_off(struct imx565 *imx565)
+{
+	const struct v4l2_rect *crop = &imx565->crop;
+
+	return imx565->subsample ||
+	       (crop->width == IMX565_PIXEL_ARRAY_WIDTH &&
+		crop->height == IMX565_PIXEL_ARRAY_HEIGHT);
+}
+
+static u32 imx565_roi_left_reg(struct imx565 *imx565)
+{
+	const struct v4l2_rect *crop = &imx565->crop;
+
+	if (!imx565->hflip->val)
+		return crop->left;
+
+	return IMX565_PIXEL_ARRAY_WIDTH - (crop->left + crop->width);
+}
+
+static u32 imx565_roi_top_reg(struct imx565 *imx565)
+{
+	const struct v4l2_rect *crop = &imx565->crop;
+
+	if (!imx565->vflip->val)
+		return crop->top;
+
+	return IMX565_PIXEL_ARRAY_HEIGHT - (crop->top + crop->height);
+}
+
+static_assert(IMX565_PIXEL_ARRAY_WIDTH % IMX565_CROP_LEFT_STEP == 0 &&
+	      IMX565_PIXEL_ARRAY_HEIGHT % IMX565_CROP_TOP_STEP == 0,
+	      "a mirrored ROI origin must stay on the 8-pixel grid");
+
 static int imx565_write_dynamic_regs(struct imx565 *imx565)
 {
 	const struct v4l2_rect *crop = &imx565->crop;
 	bool sub = imx565->subsample;
-	bool full = sub || (crop->width == IMX565_PIXEL_ARRAY_WIDTH &&
-			    crop->height == IMX565_PIXEL_ARRAY_HEIGHT);
+	bool full = imx565_roi_is_off(imx565);
 	int ret = 0;
 
 	imx565_reghold(imx565, true);
@@ -902,10 +944,10 @@ static int imx565_write_dynamic_regs(struct imx565 *imx565)
 					      IMX565_FID0_ROI_AREA1);
 	if (!ret && !full) {
 		ret = imx565_write_reg(imx565, IMX565_REG_FID0_ROIPH1, 2,
-				       crop->left);
+				       imx565_roi_left_reg(imx565));
 		if (!ret)
 			ret = imx565_write_reg(imx565, IMX565_REG_FID0_ROIPV1,
-					       2, crop->top);
+					       2, imx565_roi_top_reg(imx565));
 		if (!ret)
 			ret = imx565_write_reg(imx565, IMX565_REG_FID0_ROIWH1,
 					       2, crop->width);
@@ -1039,6 +1081,15 @@ static int imx565_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct i2c_client *client = v4l2_get_subdevdata(&imx565->sd);
 	int ret = 0;
 
+	if (ctrl->id == CHC5SENSOR_CID_TRIGGER_MODE) {
+		imx565->trig_mode = ctrl->val;
+		return 0;
+	}
+	if (ctrl->id == CHC5SENSOR_CID_SYNC_FOLLOWER) {
+		imx565->follower = ctrl->val;
+		return 0;
+	}
+
 	if (ctrl->id == V4L2_CID_VBLANK) {
 		imx565->vmax = imx565->out_height + ctrl->val;
 		imx565_adjust_exposure_range(imx565);
@@ -1089,9 +1140,19 @@ static int imx565_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case V4L2_CID_HFLIP:
 	case V4L2_CID_VFLIP:
+		imx565_reghold(imx565, true);
 		ret = imx565_write_reg(imx565, IMX565_REG_HVREVERSE, 1,
 				       (imx565->vflip->val ? 0x01 : 0x00) |
 				       (imx565->hflip->val ? 0x02 : 0x00));
+		if (!ret && ctrl->id == V4L2_CID_HFLIP &&
+		    !imx565_roi_is_off(imx565))
+			ret = imx565_write_reg(imx565, IMX565_REG_FID0_ROIPH1,
+					       2, imx565_roi_left_reg(imx565));
+		if (!ret && ctrl->id == V4L2_CID_VFLIP &&
+		    !imx565_roi_is_off(imx565))
+			ret = imx565_write_reg(imx565, IMX565_REG_FID0_ROIPV1,
+					       2, imx565_roi_top_reg(imx565));
+		imx565_reghold(imx565, false);
 		break;
 	case V4L2_CID_TEST_PATTERN:
 		if (ctrl->val) {
@@ -1124,6 +1185,18 @@ static int imx565_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 		container_of(ctrl->handler, struct imx565, ctrl_handler);
 
 	switch (ctrl->id) {
+	case CHC5SENSOR_CID_LINE_TIME_PS:
+		ctrl->val = (s32)div_u64((u64)imx565->hmax * 1000000000000ULL,
+					 IMX565_INTERNAL_CLOCK);
+		return 0;
+	case CHC5SENSOR_CID_FRAME_LINES:
+		ctrl->val = imx565->vmax;
+		return 0;
+	case CHC5SENSOR_CID_TRIGGER_EXP_OFFSET_NS:
+		ctrl->val = (s32)div_u64((u64)imx565_gmrwt(imx565) * imx565->hmax *
+					 1000000000ULL, 74250000) +
+			    IMX565_TRIG_EXP_OFFSET_NS;
+		return 0;
 	case CHC5SENSOR_CID_OB_TOP:
 		ctrl->val = imx565->subsample ? IMX565_SUB_TRIM_TOP
 					      : IMX565_VOB_LINES;
@@ -1168,6 +1241,70 @@ static const struct v4l2_ctrl_config imx565_ob_ctrls[] = {
 	IMX565_OB_CTRL(CHC5SENSOR_CID_OB_RIGHT,  "Optical Black Right"),
 	IMX565_OB_CTRL(CHC5SENSOR_CID_OB_BOTTOM, "Optical Black Bottom"),
 	IMX565_OB_CTRL(CHC5SENSOR_CID_OB_ON_IMAGE_DT, "Optical Black On Image DT"),
+};
+
+static const char * const imx565_trig_mode_menu[] = { "Free Run", "Fast Trigger" };
+
+static const struct v4l2_ctrl_config imx565_trig_ctrls[] = {
+	{
+		.ops   = &imx565_ctrl_ops,
+		.id    = CHC5SENSOR_CID_TRIGGER_MODE,
+		.name  = "Trigger Mode",
+		.type  = V4L2_CTRL_TYPE_MENU,
+		.min   = 0,
+		.max   = CHC5SENSOR_TRIGGER_FAST,
+		.def   = CHC5SENSOR_TRIGGER_FREE_RUN,
+		.qmenu = imx565_trig_mode_menu,
+	}, {
+		.ops   = &imx565_ctrl_ops,
+		.id    = CHC5SENSOR_CID_TRIGGER_EXP_OFFSET_NS,
+		.name  = "Trigger Exposure Offset ns",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	},
+};
+
+static const struct v4l2_ctrl_config imx565_follow_ctrls[] = {
+	{
+		.ops   = &imx565_ctrl_ops,
+		.id    = CHC5SENSOR_CID_SYNC_FOLLOWER,
+		.name  = "Sync Follower",
+		.type  = V4L2_CTRL_TYPE_BOOLEAN,
+		.min   = 0,
+		.max   = 1,
+		.step  = 1,
+	}, {
+		.ops   = &imx565_ctrl_ops,
+		.id    = CHC5SENSOR_CID_FOLLOWER_XHS,
+		.name  = "Follower XHS",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 1,
+		.max   = 1,
+		.def   = 1,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY,
+	}, {
+		.ops   = &imx565_ctrl_ops,
+		.id    = CHC5SENSOR_CID_LINE_TIME_PS,
+		.name  = "Line Time ps",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	}, {
+		.ops   = &imx565_ctrl_ops,
+		.id    = CHC5SENSOR_CID_FRAME_LINES,
+		.name  = "Frame Lines",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	},
 };
 
 static int imx565_enum_mbus_code(struct v4l2_subdev *sd,
@@ -1547,6 +1684,17 @@ static int imx565_start_streaming(struct imx565 *imx565)
 	const struct imx565_reg_list *rate_list;
 	int ret;
 
+	if (imx565->reset_gpio && imx565->latched_follower != imx565->follower) {
+		gpiod_set_value_cansleep(imx565->reset_gpio, 0);
+		usleep_range(IMX565_XCLR_ASSERT_US, IMX565_XCLR_ASSERT_US * 2);
+		gpiod_set_value_cansleep(imx565->reset_gpio, 1);
+		usleep_range(IMX565_XCLR_MIN_DELAY_US,
+			     IMX565_XCLR_MIN_DELAY_US + IMX565_XCLR_DELAY_RANGE_US);
+		imx565->latched_follower = imx565->follower;
+		dev_info(&client->dev, "XCLR pulsed: %s\n",
+			 imx565->follower ? "follower" : "leader");
+	}
+
 	ret = imx565_write_regs(imx565, mode_common_regs,
 				ARRAY_SIZE(mode_common_regs));
 	if (ret) {
@@ -1598,12 +1746,33 @@ static int imx565_start_streaming(struct imx565 *imx565)
 	if (ret)
 		return ret;
 
+	if (imx565->follower && imx565->trig_mode == CHC5SENSOR_TRIGGER_FAST)
+		dev_warn(&client->dev, "Fast Trigger is master-only: follower runs without it\n");
+	ret = imx565_write_reg(imx565, IMX565_REG_TRIGMODE, 1,
+			       !imx565->follower &&
+			       imx565->trig_mode == CHC5SENSOR_TRIGGER_FAST ?
+			       IMX565_TRIGMODE_FAST : 0x00);
+	if (ret)
+		return ret;
+
+	ret = imx565_write_reg(imx565, IMX565_REG_SYNCSEL, 1,
+			       imx565->follower ? IMX565_SYNCSEL_HIZ :
+						  IMX565_SYNCSEL_DRIVEN);
+	if (ret)
+		return ret;
+
+	ret = imx565_write_reg(imx565, IMX565_REG_TOUT0SEL, 1, IMX565_TOUT0SEL_EXPOSURE);
+	if (ret)
+		return ret;
+
 	ret = imx565_write_reg(imx565, IMX565_REG_STANDBY, 1, 0x00);
 	if (ret)
 		return ret;
 
 	msleep(30);
 
+	if (imx565->follower)
+		return 0;
 	return imx565_write_reg(imx565, IMX565_REG_XMSTA, 1, 0x00);
 }
 
@@ -1694,6 +1863,7 @@ static int imx565_power_on(struct device *dev)
 	gpiod_set_value_cansleep(imx565->reset_gpio, 1);
 	usleep_range(IMX565_XCLR_MIN_DELAY_US,
 		     IMX565_XCLR_MIN_DELAY_US + IMX565_XCLR_DELAY_RANGE_US);
+	imx565->latched_follower = imx565->reset_gpio ? imx565->follower : -1;
 
 	return 0;
 
@@ -1832,7 +2002,7 @@ static int imx565_init_controls(struct imx565 *imx565)
 	int ret;
 
 	ctrl_hdlr = &imx565->ctrl_handler;
-	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 17);
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 23);
 	if (ret)
 		return ret;
 
@@ -1892,6 +2062,13 @@ static int imx565_init_controls(struct imx565 *imx565)
 
 	for (i = 0; i < ARRAY_SIZE(imx565_ob_ctrls); i++)
 		v4l2_ctrl_new_custom(ctrl_hdlr, &imx565_ob_ctrls[i], NULL);
+
+	for (i = 0; i < ARRAY_SIZE(imx565_trig_ctrls); i++)
+		v4l2_ctrl_new_custom(ctrl_hdlr, &imx565_trig_ctrls[i], NULL);
+
+	if (imx565->reset_gpio)
+		for (i = 0; i < ARRAY_SIZE(imx565_follow_ctrls); i++)
+			v4l2_ctrl_new_custom(ctrl_hdlr, &imx565_follow_ctrls[i], NULL);
 
 	if (ctrl_hdlr->error) {
 		ret = ctrl_hdlr->error;

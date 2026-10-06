@@ -17,6 +17,13 @@ void media_pipeline_close(void);
 int  media_pipeline_set_format(const imgsensor_cfg_t *cfg);
 int  media_pipeline_set_pixpack_format(uint32_t pfnc_usb, uint32_t pfnc_eth);
 int  media_pipeline_set_sensor_controls(const imgsensor_cfg_t *cfg);
+int  media_pipeline_set_sync_follower(int on);
+int  media_pipeline_wait_sensor_off(int timeout_ms);
+int  media_pipeline_can_follow(void);
+int  media_pipeline_follower_xhs(void);
+int  media_pipeline_can_trigger(void);
+int  media_pipeline_line_timing(uint32_t *line_ps, uint32_t *frame_lines);
+int  media_pipeline_set_trigger_mode(int fast);
 
 
 int  media_pipeline_stream_on(void);

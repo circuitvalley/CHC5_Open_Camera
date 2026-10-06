@@ -8,10 +8,10 @@
   SchemaMinorVersion="1"
   SchemaSubMinorVersion="0"
   MajorVersion="1"
-  MinorVersion="6"
+  MinorVersion="7"
   SubMinorVersion="0"
   ProductGuid="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
-  VersionGuid="29F9387B-02EA-4978-B897-6DFD99C0A4B6"
+  VersionGuid="9B7C99AF-2CAF-4732-9078-EE7C01A64F5E"
   xmlns="http://www.genicam.org/GenApi/Version_1_1"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://www.genicam.org/GenApi/Version_1_1 GenApiSchema.xsd">
@@ -23,6 +23,8 @@
     <pFeature>AcquisitionControl</pFeature>
     <pFeature>DigitalIOControl</pFeature>
     <pFeature>CHC5AuxSyncControl</pFeature>
+    <pFeature>SyncFreeRunTimerControl</pFeature>
+    <pFeature>ActionControl</pFeature>
     <pFeature>AnalogControl</pFeature>
     <pFeature>TransportLayerControl</pFeature>
     <pFeature>UserSetControl</pFeature>
@@ -873,7 +875,6 @@ $$PIXEL_FORMAT_ENTRIES$$
     <Visibility>Expert</Visibility>
     <pValue>TestPatternGenSelectorReg</pValue>
     <EnumEntry Name="Sensor" NameSpace="Standard"><Value>0</Value></EnumEntry>
-    <EnumEntry Name="Region0" NameSpace="Standard"><Value>1</Value></EnumEntry>
     <AccessMode>RW</AccessMode>
   </Enumeration>
 
@@ -933,7 +934,6 @@ $$PIXEL_FORMAT_ENTRIES$$
     <pFeature>TriggerActivation</pFeature>
     <pFeature>TriggerDelay</pFeature>
     <pFeature>TriggerDivider</pFeature>
-    <pFeature>TriggerOverlap</pFeature>
   </Category>
 
   <Enumeration Name="AcquisitionMode" NameSpace="Standard">
@@ -1108,21 +1108,14 @@ $$PIXEL_FORMAT_ENTRIES$$
     <DisplayName>Exposure Mode</DisplayName>
     <Visibility>Beginner</Visibility>
     <pValue>ExposureModeReg</pValue>
-    <EnumEntry Name="Off" NameSpace="Standard">
-      <ToolTip>No exposure control (free run)</ToolTip>
-      <Value>0</Value>
-    </EnumEntry>
     <EnumEntry Name="Timed" NameSpace="Standard">
       <ToolTip>Timed exposure; duration set by ExposureTime</ToolTip>
       <Value>1</Value>
     </EnumEntry>
     <EnumEntry Name="TriggerWidth" NameSpace="Standard">
       <ToolTip>Exposure duration is controlled by the width of the external trigger signal</ToolTip>
+      <pIsAvailable>CHC5CapSoftware</pIsAvailable>
       <Value>2</Value>
-    </EnumEntry>
-    <EnumEntry Name="TriggerControlled" NameSpace="Standard">
-      <ToolTip>Exposure starts on trigger and ends on next trigger</ToolTip>
-      <Value>3</Value>
     </EnumEntry>
     <AccessMode>RW</AccessMode>
   </Enumeration>
@@ -1335,20 +1328,12 @@ $$PIXEL_FORMAT_ENTRIES$$
   </IntReg>
 
   <Enumeration Name="TriggerSelector" NameSpace="Standard">
-    <ToolTip>Selects the type of trigger to configure</ToolTip>
+    <ToolTip>Selects the type of trigger to configure: one trigger, the frame start</ToolTip>
     <DisplayName>Trigger Selector</DisplayName>
     <Visibility>Beginner</Visibility>
+    <pIsAvailable>CHC5CapTrigger</pIsAvailable>
     <pValue>TriggerSelectorReg</pValue>
-    <EnumEntry Name="AcquisitionStart" NameSpace="Standard"><Value>0</Value></EnumEntry>
-    <EnumEntry Name="AcquisitionEnd" NameSpace="Standard"><Value>1</Value></EnumEntry>
-    <EnumEntry Name="AcquisitionActive" NameSpace="Standard"><Value>2</Value></EnumEntry>
     <EnumEntry Name="FrameStart" NameSpace="Standard"><Value>3</Value></EnumEntry>
-    <EnumEntry Name="FrameEnd" NameSpace="Standard"><Value>4</Value></EnumEntry>
-    <EnumEntry Name="FrameActive" NameSpace="Standard"><Value>5</Value></EnumEntry>
-    <EnumEntry Name="FrameBurstStart" NameSpace="Standard"><Value>6</Value></EnumEntry>
-    <EnumEntry Name="ExposureStart" NameSpace="Standard"><Value>7</Value></EnumEntry>
-    <EnumEntry Name="ExposureEnd" NameSpace="Standard"><Value>8</Value></EnumEntry>
-    <EnumEntry Name="ExposureActive" NameSpace="Standard"><Value>9</Value></EnumEntry>
     <AccessMode>RW</AccessMode>
   </Enumeration>
 
@@ -1364,6 +1349,7 @@ $$PIXEL_FORMAT_ENTRIES$$
     <ToolTip>Controls whether or not the selected trigger is active</ToolTip>
     <DisplayName>Trigger Mode</DisplayName>
     <Visibility>Beginner</Visibility>
+    <pIsAvailable>CHC5CapTrigger</pIsAvailable>
     <pValue>TriggerModeReg</pValue>
     <EnumEntry Name="Off" NameSpace="Standard"><Value>0</Value></EnumEntry>
     <EnumEntry Name="On" NameSpace="Standard"><Value>1</Value></EnumEntry>
@@ -1382,6 +1368,7 @@ $$PIXEL_FORMAT_ENTRIES$$
     <ToolTip>Generates an internal trigger</ToolTip>
     <DisplayName>Trigger Software</DisplayName>
     <Visibility>Beginner</Visibility>
+    <pIsAvailable>CHC5CapSoftware</pIsAvailable>
     <pValue>TriggerSoftwareReg</pValue>
     <CommandValue>1</CommandValue>
     <AccessMode>WO</AccessMode>
@@ -1399,15 +1386,11 @@ $$PIXEL_FORMAT_ENTRIES$$
     <ToolTip>Specifies the internal signal or physical input line to use as the trigger source</ToolTip>
     <DisplayName>Trigger Source</DisplayName>
     <Visibility>Beginner</Visibility>
+    <pIsAvailable>CHC5CapTrigger</pIsAvailable>
     <pValue>TriggerSourceReg</pValue>
-    <EnumEntry Name="Software" NameSpace="Standard"><Value>0</Value></EnumEntry>
+    <EnumEntry Name="Software" NameSpace="Standard"><pIsAvailable>CHC5CapSoftware</pIsAvailable><Value>0</Value></EnumEntry>
     <EnumEntry Name="Line0" NameSpace="Standard"><Value>1</Value></EnumEntry>
-    <EnumEntry Name="Line1" NameSpace="Standard"><Value>2</Value></EnumEntry>
-    <EnumEntry Name="Line2" NameSpace="Standard"><Value>3</Value></EnumEntry>
-    <EnumEntry Name="Counter0Start" NameSpace="Standard"><Value>4</Value></EnumEntry>
-    <EnumEntry Name="Counter1Start" NameSpace="Standard"><Value>5</Value></EnumEntry>
-    <EnumEntry Name="Timer0Start" NameSpace="Standard"><Value>6</Value></EnumEntry>
-    <EnumEntry Name="Timer1Start" NameSpace="Standard"><Value>7</Value></EnumEntry>
+    <EnumEntry Name="Action1" NameSpace="Standard"><pIsAvailable>CHC5CapSoftware</pIsAvailable><Value>2</Value></EnumEntry>
     <AccessMode>RW</AccessMode>
   </Enumeration>
 
@@ -1423,6 +1406,7 @@ $$PIXEL_FORMAT_ENTRIES$$
     <ToolTip>Specifies the activation mode of the trigger</ToolTip>
     <DisplayName>Trigger Activation</DisplayName>
     <Visibility>Expert</Visibility>
+    <pIsAvailable>CHC5CapTrigger</pIsAvailable>
     <pValue>TriggerActivationReg</pValue>
     <EnumEntry Name="RisingEdge" NameSpace="Standard"><Value>0</Value></EnumEntry>
     <EnumEntry Name="FallingEdge" NameSpace="Standard"><Value>1</Value></EnumEntry>
@@ -1443,6 +1427,7 @@ $$PIXEL_FORMAT_ENTRIES$$
     <ToolTip>Specifies the delay in microseconds to apply after the trigger reception before activating it</ToolTip>
     <DisplayName>Trigger Delay</DisplayName>
     <Visibility>Expert</Visibility>
+    <pIsAvailable>CHC5CapTrigger</pIsAvailable>
     <pValue>TriggerDelayFloat</pValue>
     <Min>0.0</Min>
     <Max>$$CAMIO_TRIGGER_DELAY_MAX_US_F$$</Max>
@@ -1457,25 +1442,6 @@ $$PIXEL_FORMAT_ENTRIES$$
     <pPort>Device</pPort>
     <Endianess>BigEndian</Endianess>
   </FloatReg>
-
-  <Enumeration Name="TriggerOverlap" NameSpace="Standard">
-    <ToolTip>Specifies the type trigger overlap permitted with the previous frame</ToolTip>
-    <DisplayName>Trigger Overlap</DisplayName>
-    <Visibility>Expert</Visibility>
-    <pValue>TriggerOverlapReg</pValue>
-    <EnumEntry Name="Off" NameSpace="Standard"><Value>0</Value></EnumEntry>
-    <EnumEntry Name="ReadOut" NameSpace="Standard"><Value>1</Value></EnumEntry>
-    <EnumEntry Name="PreviousFrame" NameSpace="Standard"><Value>2</Value></EnumEntry>
-    <AccessMode>RW</AccessMode>
-  </Enumeration>
-
-  <IntReg Name="TriggerOverlapReg">
-    <Address>0xC070</Address>
-    <Length>4</Length>
-    <AccessMode>RW</AccessMode>
-    <pPort>Device</pPort>
-    <Endianess>BigEndian</Endianess>
-  </IntReg>
 
   <Category Name="AnalogControl" NameSpace="Standard">
     <ToolTip>Analog signal processing features</ToolTip>
@@ -2869,7 +2835,7 @@ $$PIXEL_FORMAT_ENTRIES$$
     <Visibility>Guru</Visibility>
     <pValue>GevSCFTDReg</pValue>
     <Min>0</Min>
-    <Max>10000000</Max>
+    <Max>1000000000</Max>
     <AccessMode>RW</AccessMode>
     <Unit>ticks</Unit>
   </Integer>
@@ -3325,11 +3291,57 @@ $$PIXEL_FORMAT_ENTRIES$$
   <Category Name="DigitalIOControl" NameSpace="Standard">
     <ToolTip>Auxiliary opto line I/O (chc5_camio_sync)</ToolTip>
     <pFeature>LineSelector</pFeature>
+    <pFeature>LineMode</pFeature>
     <pFeature>LineInverter</pFeature>
     <pFeature>LineStatus</pFeature>
+    <pFeature>LineStatusAll</pFeature>
     <pFeature>LineSource</pFeature>
+    <pFeature>LineDebouncerTime</pFeature>
     <pFeature>UserOutputValue</pFeature>
   </Category>
+
+  <Enumeration Name="LineMode" NameSpace="Standard">
+    <DisplayName>Line Mode</DisplayName>
+    <ToolTip>Line0 is the opto-isolated input, Line1 the opto-isolated output (fixed).</ToolTip>
+    <pValue>LineSelectorReg</pValue>
+    <EnumEntry Name="Input" NameSpace="Standard"><Value>0</Value></EnumEntry>
+    <EnumEntry Name="Output" NameSpace="Standard"><Value>1</Value></EnumEntry>
+    <AccessMode>RO</AccessMode>
+  </Enumeration>
+
+  <Integer Name="LineStatusAll" NameSpace="Standard">
+    <DisplayName>Line Status All</DisplayName>
+    <ToolTip>Live level of every line: bit 0 Line0 (input), bit 1 Line1 (output).</ToolTip>
+    <pValue>LineStatusAllReg</pValue>
+    <AccessMode>RO</AccessMode>
+  </Integer>
+  <IntReg Name="LineStatusAllReg">
+    <Address>0xE010</Address><Length>4</Length><AccessMode>RO</AccessMode>
+    <pPort>Device</pPort><Cachable>NoCache</Cachable><Endianess>BigEndian</Endianess>
+  </IntReg>
+
+  <IntSwissKnife Name="LineSelectorIsInput">
+    <pVariable Name="SEL">LineSelectorReg</pVariable>
+    <pVariable Name="CAPS">CHC5IoCapsReg</pVariable>
+    <Formula>(SEL = 0) &amp;&amp; ((CAPS &amp; 4) = 4)</Formula>
+  </IntSwissKnife>
+  <IntSwissKnife Name="LineSelectorIsOutput">
+    <pVariable Name="SEL">LineSelectorReg</pVariable>
+    <Formula>SEL = 1</Formula>
+  </IntSwissKnife>
+  <Float Name="LineDebouncerTime" NameSpace="Standard">
+    <DisplayName>Line Debouncer Time</DisplayName>
+    <ToolTip>Line0 must hold a new level this long (us) before it counts. 0 = off.</ToolTip>
+    <pIsAvailable>LineSelectorIsInput</pIsAvailable>
+    <pValue>LineDebouncerTimeReg</pValue>
+    <Min>0.0</Min>
+    <Max>16777.215</Max>
+    <Unit>us</Unit>
+  </Float>
+  <FloatReg Name="LineDebouncerTimeReg">
+    <Address>0xE0A0</Address><Length>8</Length><AccessMode>RW</AccessMode>
+    <pPort>Device</pPort><Endianess>BigEndian</Endianess>
+  </FloatReg>
 
   <Enumeration Name="LineSelector" NameSpace="Standard">
     <DisplayName>Line Selector</DisplayName>
@@ -3360,20 +3372,23 @@ $$PIXEL_FORMAT_ENTRIES$$
   </Boolean>
   <IntReg Name="LineStatusReg">
     <Address>0xE00C</Address><Length>4</Length><AccessMode>RO</AccessMode>
-    <pPort>Device</pPort><Endianess>BigEndian</Endianess>
+    <pPort>Device</pPort><Cachable>NoCache</Cachable><Endianess>BigEndian</Endianess>
   </IntReg>
 
   <Enumeration Name="LineSource" NameSpace="Standard">
     <DisplayName>Line Source</DisplayName>
+    <ToolTip>What drives the selected output line (Line1).</ToolTip>
+    <pIsAvailable>LineSelectorIsOutput</pIsAvailable>
     <pValue>LineSourceReg</pValue>
     <EnumEntry Name="Off" NameSpace="Standard"><Value>0</Value></EnumEntry>
     <EnumEntry Name="UserOutput0" NameSpace="Standard"><Value>1</Value></EnumEntry>
     <EnumEntry Name="Strobe" NameSpace="Custom"><Value>2</Value></EnumEntry>
-    <EnumEntry Name="ExposureActive" NameSpace="Standard"><Value>3</Value></EnumEntry>
-    <EnumEntry Name="Status" NameSpace="Custom"><Value>4</Value></EnumEntry>
-    <EnumEntry Name="SyncOut" NameSpace="Custom"><Value>5</Value></EnumEntry>
+    <EnumEntry Name="ExposureActive" NameSpace="Standard"><pIsAvailable>CHC5CapNativeStrobe</pIsAvailable><Value>3</Value></EnumEntry>
+    <EnumEntry Name="FrameTriggerWait" NameSpace="Standard"><ToolTip>High while the camera can take a frame trigger (no exposure or strobe in progress).</ToolTip><Value>4</Value></EnumEntry>
+    <EnumEntry Name="SyncOut" NameSpace="Custom"><pIsAvailable>CHC5CapSyncOut</pIsAvailable><Value>5</Value></EnumEntry>
     <EnumEntry Name="InputPassthrough" NameSpace="Custom"><Value>6</Value></EnumEntry>
     <EnumEntry Name="PtpPulse" NameSpace="Custom">
+      <pIsAvailable>CHC5CapPtpPulse</pIsAvailable>
       <ToolTip>A 1 ms pulse on every PTP second, from the FPGA time base locked to PTP (bitstreams with the PTP time base only). For checking sync between cameras; the optocoupler adds microseconds of delay.</ToolTip>
       <Value>7</Value>
     </EnumEntry>
@@ -3386,6 +3401,7 @@ $$PIXEL_FORMAT_ENTRIES$$
 
   <Boolean Name="UserOutputValue" NameSpace="Standard">
     <DisplayName>User Output Value</DisplayName>
+    <pIsAvailable>LineSelectorIsOutput</pIsAvailable>
     <pValue>UserOutputValueReg</pValue>
     <AccessMode>RW</AccessMode>
   </Boolean>
@@ -3396,6 +3412,7 @@ $$PIXEL_FORMAT_ENTRIES$$
 
   <Integer Name="TriggerDivider" NameSpace="Standard">
     <DisplayName>Trigger Divider</DisplayName>
+    <pIsAvailable>CHC5CapTrigger</pIsAvailable>
     <pValue>TriggerDividerReg</pValue>
     <Min>1</Min><Max>$$CAMIO_TRIGGER_DIVIDER_MAX$$</Max><Inc>1</Inc>
     <AccessMode>RW</AccessMode>
@@ -3414,6 +3431,7 @@ $$PIXEL_FORMAT_ENTRIES$$
     <pFeature>StrobeMinOn</pFeature>
     <pFeature>SyncRole</pFeature>
     <pFeature>SyncStatus</pFeature>
+    <pFeature>CHC5IoCaps</pFeature>
   </Category>
 
   <Boolean Name="StrobeEnable" NameSpace="Custom"><DisplayName>Strobe Enable</DisplayName><pValue>StrobeEnableReg</pValue><AccessMode>RW</AccessMode></Boolean>
@@ -3421,7 +3439,7 @@ $$PIXEL_FORMAT_ENTRIES$$
 
   <Enumeration Name="StrobeSource" NameSpace="Custom"><DisplayName>Strobe Source</DisplayName><pValue>StrobeSourceReg</pValue>
     <EnumEntry Name="PLGenerated" NameSpace="Custom"><Value>0</Value></EnumEntry>
-    <EnumEntry Name="NativeStrobe" NameSpace="Custom"><DisplayName>Native Strobe</DisplayName><Value>1</Value></EnumEntry>
+    <EnumEntry Name="NativeStrobe" NameSpace="Custom"><DisplayName>Native Strobe</DisplayName><pIsAvailable>CHC5CapNativeStrobe</pIsAvailable><Value>1</Value></EnumEntry>
     <AccessMode>RW</AccessMode></Enumeration>
   <IntReg Name="StrobeSourceReg"><Address>0xE044</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Endianess>BigEndian</Endianess></IntReg>
 
@@ -3437,13 +3455,117 @@ $$PIXEL_FORMAT_ENTRIES$$
 
   <Enumeration Name="SyncRole" NameSpace="Custom"><DisplayName>Sync Role</DisplayName><pValue>SyncRoleReg</pValue>
     <EnumEntry Name="Off" NameSpace="Custom"><Value>0</Value></EnumEntry>
-    <EnumEntry Name="Master" NameSpace="Custom"><Value>1</Value></EnumEntry>
-    <EnumEntry Name="Slave" NameSpace="Custom"><Value>2</Value></EnumEntry>
+    <EnumEntry Name="Master" NameSpace="Custom"><pIsAvailable>CHC5CapSyncOut</pIsAvailable><Value>1</Value></EnumEntry>
+    <EnumEntry Name="Slave" NameSpace="Custom"><pIsAvailable>CHC5CapGenlock</pIsAvailable><Value>2</Value></EnumEntry>
     <AccessMode>RW</AccessMode></Enumeration>
   <IntReg Name="SyncRoleReg"><Address>0xE070</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Endianess>BigEndian</Endianess></IntReg>
 
-  <Integer Name="SyncStatus" NameSpace="Custom"><DisplayName>Sync Status</DisplayName><pValue>SyncStatusReg</pValue><AccessMode>RO</AccessMode></Integer>
-  <IntReg Name="SyncStatusReg"><Address>0xE074</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Endianess>BigEndian</Endianess></IntReg>
+  <Integer Name="SyncStatus" NameSpace="Custom"><DisplayName>Sync Status</DisplayName><ToolTip>bit 0 locked, 1 slave detected, 3:2 role (0 off, 1 master, 2 slave, 3 PTP follower).</ToolTip><pValue>SyncStatusReg</pValue><AccessMode>RO</AccessMode></Integer>
+  <IntReg Name="SyncStatusReg"><Address>0xE074</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Cachable>NoCache</Cachable><Endianess>BigEndian</Endianess></IntReg>
+
+  <Category Name="SyncFreeRunTimerControl" NameSpace="Custom">
+    <ToolTip>PTP synchronous free run</ToolTip>
+    <pFeature>SyncFreeRunTimerEnable</pFeature>
+    <pFeature>SyncFreeRunTimerTriggerRateAbs</pFeature>
+    <pFeature>SyncFreeRunTimerStartTimeLow</pFeature>
+    <pFeature>SyncFreeRunTimerStartTimeHigh</pFeature>
+    <pFeature>SyncFreeRunTimerUpdate</pFeature>
+    <pFeature>SyncFreeRunTimerStatus</pFeature>
+  </Category>
+  <Boolean Name="SyncFreeRunTimerEnable" NameSpace="Custom">
+    <DisplayName>Sync Free Run Timer Enable</DisplayName>
+    <ToolTip>Frames on the PTP grid (TriggerMode must be Off).</ToolTip>
+    <pIsAvailable>CHC5CapPtpSync</pIsAvailable>
+    <pValue>SyncFreeRunTimerEnableReg</pValue>
+  </Boolean>
+  <IntReg Name="SyncFreeRunTimerEnableReg"><Address>0xE080</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Endianess>BigEndian</Endianess></IntReg>
+  <Float Name="SyncFreeRunTimerTriggerRateAbs" NameSpace="Custom">
+    <DisplayName>Sync Free Run Timer Trigger Rate</DisplayName>
+    <ToolTip>Frame rate on the PTP grid; the same on every camera.  Applies on Enable / Update.</ToolTip>
+    <pIsAvailable>CHC5CapPtpSync</pIsAvailable>
+    <pValue>SyncFreeRunTimerTriggerRateAbsReg</pValue>
+    <Min>0.01</Min><Max>1000.0</Max><Unit>Hz</Unit>
+  </Float>
+  <FloatReg Name="SyncFreeRunTimerTriggerRateAbsReg"><Address>0xE090</Address><Length>8</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Endianess>BigEndian</Endianess></FloatReg>
+  <Integer Name="SyncFreeRunTimerStartTimeLow" NameSpace="Custom">
+    <DisplayName>Sync Free Run Timer Start Time Low</DisplayName>
+    <ToolTip>PTP time (ns) of the first frame, low 32 bits.  0 with High 0: the grid k / rate from PTP time 0.</ToolTip>
+    <pIsAvailable>CHC5CapPtpSync</pIsAvailable>
+    <pValue>SyncFreeRunTimerStartTimeLowReg</pValue>
+  </Integer>
+  <IntReg Name="SyncFreeRunTimerStartTimeLowReg"><Address>0xE084</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianess>BigEndian</Endianess></IntReg>
+  <Integer Name="SyncFreeRunTimerStartTimeHigh" NameSpace="Custom">
+    <DisplayName>Sync Free Run Timer Start Time High</DisplayName>
+    <pIsAvailable>CHC5CapPtpSync</pIsAvailable>
+    <pValue>SyncFreeRunTimerStartTimeHighReg</pValue>
+  </Integer>
+  <IntReg Name="SyncFreeRunTimerStartTimeHighReg"><Address>0xE088</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianess>BigEndian</Endianess></IntReg>
+  <Command Name="SyncFreeRunTimerUpdate" NameSpace="Custom">
+    <DisplayName>Sync Free Run Timer Update</DisplayName>
+    <ToolTip>Apply the rate and start time.</ToolTip>
+    <pIsAvailable>CHC5CapPtpSync</pIsAvailable>
+    <pValue>SyncFreeRunTimerUpdateReg</pValue>
+    <CommandValue>1</CommandValue>
+  </Command>
+  <IntReg Name="SyncFreeRunTimerUpdateReg"><Address>0xE098</Address><Length>4</Length><AccessMode>WO</AccessMode><pPort>Device</pPort><Endianess>BigEndian</Endianess></IntReg>
+  <Integer Name="SyncFreeRunTimerStatus" NameSpace="Custom">
+    <DisplayName>Sync Free Run Timer Status</DisplayName>
+    <ToolTip>bit 2 running, 3 no time, 4 start refused (past / too close), 5 waiting for the start, 8 frames on PTP time (time base locked and PTP on), 9 time base servo running.</ToolTip>
+    <pIsAvailable>CHC5CapPtpSync</pIsAvailable>
+    <pValue>SyncFreeRunTimerStatusReg</pValue>
+    <AccessMode>RO</AccessMode>
+  </Integer>
+  <IntReg Name="SyncFreeRunTimerStatusReg"><Address>0xE08C</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Cachable>NoCache</Cachable><Endianess>BigEndian</Endianess></IntReg>
+
+  <Category Name="ActionControl" NameSpace="Standard">
+    <ToolTip>Action commands: one network packet triggers every camera in a group</ToolTip>
+    <pFeature>ActionDeviceKey</pFeature>
+    <pFeature>ActionSelector</pFeature>
+    <pFeature>ActionGroupKey</pFeature>
+    <pFeature>ActionGroupMask</pFeature>
+  </Category>
+  <Integer Name="ActionDeviceKey" NameSpace="Standard">
+    <DisplayName>Action Device Key</DisplayName>
+    <pIsAvailable>CHC5CapSoftware</pIsAvailable>
+    <pValue>ActionDeviceKeyReg</pValue>
+    <AccessMode>WO</AccessMode>
+  </Integer>
+  <IntReg Name="ActionDeviceKeyReg"><Address>0x090C</Address><Length>4</Length><AccessMode>WO</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianess>BigEndian</Endianess></IntReg>
+  <Integer Name="ActionSelector" NameSpace="Standard">
+    <DisplayName>Action Selector</DisplayName>
+    <ToolTip>Action1 only.</ToolTip>
+    <Value>1</Value><Min>1</Min><Max>1</Max>
+    <pSelected>ActionGroupKey</pSelected>
+    <pSelected>ActionGroupMask</pSelected>
+  </Integer>
+  <Integer Name="ActionGroupKey" NameSpace="Standard">
+    <DisplayName>Action Group Key</DisplayName>
+    <pIsAvailable>CHC5CapSoftware</pIsAvailable>
+    <pValue>ActionGroupKeyReg</pValue>
+  </Integer>
+  <IntReg Name="ActionGroupKeyReg"><Address>0x9800</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianess>BigEndian</Endianess></IntReg>
+  <Integer Name="ActionGroupMask" NameSpace="Standard">
+    <DisplayName>Action Group Mask</DisplayName>
+    <pIsAvailable>CHC5CapSoftware</pIsAvailable>
+    <pValue>ActionGroupMaskReg</pValue>
+  </Integer>
+  <IntReg Name="ActionGroupMaskReg"><Address>0x9804</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianess>BigEndian</Endianess></IntReg>
+
+  <Integer Name="CHC5IoCaps" NameSpace="Custom">
+    <DisplayName>CHC5 I/O Capabilities</DisplayName>
+    <Visibility>Guru</Visibility>
+    <pValue>CHC5IoCapsReg</pValue>
+    <AccessMode>RO</AccessMode>
+  </Integer>
+  <IntReg Name="CHC5IoCapsReg"><Address>0xE0FC</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Cachable>NoCache</Cachable><Sign>Unsigned</Sign><Endianess>BigEndian</Endianess></IntReg>
+  <IntSwissKnife Name="CHC5CapTrigger"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 1) = 1</Formula></IntSwissKnife>
+  <IntSwissKnife Name="CHC5CapSoftware"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 2) = 2</Formula></IntSwissKnife>
+  <IntSwissKnife Name="CHC5CapDebounce"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 4) = 4</Formula></IntSwissKnife>
+  <IntSwissKnife Name="CHC5CapPtpSync"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 8) = 8</Formula></IntSwissKnife>
+  <IntSwissKnife Name="CHC5CapGenlock"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 16) = 16</Formula></IntSwissKnife>
+  <IntSwissKnife Name="CHC5CapNativeStrobe"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 32) = 32</Formula></IntSwissKnife>
+  <IntSwissKnife Name="CHC5CapSyncOut"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 64) = 64</Formula></IntSwissKnife>
+  <IntSwissKnife Name="CHC5CapPtpPulse"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 128) = 128</Formula></IntSwissKnife>
 
 
   <Port Name="Device" NameSpace="Standard">

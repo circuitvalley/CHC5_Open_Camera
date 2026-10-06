@@ -101,4 +101,10 @@ struct gvsp_stats {
 #define GVSP_IOC_RESET      _IO (GVSP_IOC_MAGIC, 4)
 #define GVSP_IOC_SET_TS_ZERO _IOW(GVSP_IOC_MAGIC, 5, __u64)
 
+struct gvsp_pacing {
+	__u32  packet_delay_ns;
+	__u32  frame_delay_ns;
+};
+#define GVSP_IOC_SET_PACING  _IOW(GVSP_IOC_MAGIC, 6, struct gvsp_pacing)
+
 #endif

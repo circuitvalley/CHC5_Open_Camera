@@ -13,7 +13,7 @@ clk_200M: clock_200M {
 };
 
 #ifdef CHC5_CSI2RX_CHC5
-#error "colour_xilinx.dtsi is the ST30 fabric: it has no chc5_csi2_rx. Drop CHC5_CSI2RX_CHC5."
+#error "colour_xilinx.dtsi has no chc5_csi2_rx: drop CHC5_CSI2RX_CHC5."
 #endif
 xcsi2rxss_1: csi2rx@43C00000 {
 	compatible = "xlnx,mipi-csi2-rx-subsystem-5.0";
@@ -260,7 +260,7 @@ v_demosaic_0: demosaic@43c10000 {
 	reg = <0x43c10000 0x10000>;
 	clocks = <&clk_200M>;
 	clock-names = "ap_clk";
-	reset-gpios = <&gpio0 54 1>;
+	reset-gpios = <&gpio0 56 1>;
 	xlnx,max-width = <5568>;
 	xlnx,max-height = <3672>;
 
@@ -291,7 +291,7 @@ v_csc_ccm_0: csc@43c30000 {
 	reg = <0x43c30000 0x10000>;
 	clocks = <&clk_200M>;
 	clock-names = "ap_clk";
-	reset-gpios = <&gpio0 56 1>;
+	reset-gpios = <&gpio0 58 1>;
 	xlnx,max-width = <5568>;
 	xlnx,max-height = <3672>;
 
@@ -332,6 +332,10 @@ chc5_camio_0: camio-sync@80003000 {
 	reg = <0x80003000 0x1000>;
 	clocks = <&clk_150M>;
 	clock-names = "s_axi_aclk";
+	circuitvalley,ptp-ethernet = <&gem0>;
+#ifdef CHC5_PTP_EVENT_PIN
+	circuitvalley,ptp-event-pin;
+#endif
 };
 
 v_gamma_lut_0: gamma@43c20000 {
@@ -339,7 +343,7 @@ v_gamma_lut_0: gamma@43c20000 {
 	reg = <0x43c20000 0x10000>;
 	clocks = <&clk_200M>;
 	clock-names = "ap_clk";
-	reset-gpios = <&gpio0 55 1>;
+	reset-gpios = <&gpio0 57 1>;
 	xlnx,max-width = <5568>;
 	xlnx,max-height = <3672>;
 
@@ -372,7 +376,7 @@ v_csc_yuv_0: csc@43c40000 {
 	reg = <0x43c40000 0x10000>;
 	clocks = <&clk_200M>;
 	clock-names = "ap_clk";
-	reset-gpios = <&gpio0 57 1>;
+	reset-gpios = <&gpio0 59 1>;
 	xlnx,max-width = <5568>;
 	xlnx,max-height = <3672>;
 
@@ -537,8 +541,18 @@ vcap_pipeline_mipi_csi2_rx_0 {
 	};
 };
 
+#ifdef CHC5_EOF_FSYNC
+chc5_eof_fsync_0: eof-fsync@80006000 {
+	compatible = "circuitvalley,chc5-eof-fsync-1.0";
+	reg = <0x80006000 0x1000>;
+};
+#endif
+
 gvsp_tx_0: gvsp-tx@0 {
 	compatible = "xlnx,gvsp-tx-1.00.a";
 	vdma-node = <&axi_vdma_1>;
+#ifdef CHC5_EOF_FSYNC
+	circuitvalley,eof-fsync = <&chc5_eof_fsync_0>;
+#endif
 	status = "okay";
 };

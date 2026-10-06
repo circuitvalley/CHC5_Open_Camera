@@ -236,6 +236,7 @@ button { font-family: inherit; }
 
 .ptp-page .labeled > .label { white-space: nowrap; }
 .ptp-page .labeled > span   { text-align: right; }
+.ptp-page .kvgrid > .kvk     { font-weight: normal; }
 
 .hidden { display: none !important; }
 
@@ -250,6 +251,8 @@ button { font-family: inherit; }
 .kvgrid > .kvv { min-width: 0; overflow-wrap: anywhere; }
 
 .kvfit .kvgrid { grid-template-columns: max-content auto; }
+
+.kvgrid.kv-right > .kvv { text-align: right; }
 
 .panel {
     display: flex;

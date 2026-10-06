@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "manifest": {
     "name": "chc5_xilinx_fw",
-    "version": "1.1.0",
+    "version": "1.5.0",
     "description": "Xilinx-IP colour ISP for 4-lane 12-bit MIPI CSI-2 sensors up to 5568x3672: CSI-2 receive, raw crop, black-level correction, demosaic, gamma, colour-space conversion, Bayer/RGB/YUV pixel packing, 1080p60 HDMI output and PTP camera sync; no AE/AWB statistics, no white-balance gain and no 3x3 colour correction matrix.",
     "build_date": "2026-09-21",
     "git_sha": "4aa4f029",

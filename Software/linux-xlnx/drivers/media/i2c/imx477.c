@@ -24,13 +24,15 @@
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-mediabus.h>
 
+#include <uapi/linux/chc5-v4l2-controls.h>
+
 static int dpc_enable = 1;
 module_param(dpc_enable, int, 0644);
 MODULE_PARM_DESC(dpc_enable, "Enable on-sensor DPC");
 
 static int trigger_mode;
 module_param(trigger_mode, int, 0644);
-MODULE_PARM_DESC(trigger_mode, "Set vsync trigger mode: 1=source, 2=sink");
+MODULE_PARM_DESC(trigger_mode, "Override the vsync trigger mode: 1=source, 2=sink (0 = the Sync Follower control)");
 
 #define IMX477_REG_VALUE_08BIT		1
 #define IMX477_REG_VALUE_16BIT		2
@@ -234,6 +236,8 @@ static unsigned int imx477_dgtl_gain_code(unsigned int db10)
 #define IMX477_REG_MS_SEL		0x3041
 #define IMX477_REG_XVS_IO_CTRL		0x3040
 #define IMX477_REG_EXTOUT_EN		0x4b81
+#define IMX477_TRIGGER_SOURCE		1
+#define IMX477_TRIGGER_SINK		2
 
 #define IMX477_EMBEDDED_LINE_WIDTH 16384
 #define IMX477_NUM_EMBEDDED_LINES 1
@@ -282,6 +286,7 @@ v4l2_subdev_state_get_compose(struct v4l2_subdev_state *state, unsigned int pad)
 #define IMX477_PIXEL_ARRAY_TOP		16U
 #define IMX477_PIXEL_ARRAY_WIDTH	4056U
 #define IMX477_PIXEL_ARRAY_HEIGHT	3040U
+#define IMX477_ROI_SPAN_WIDTH		4048U
 
 #define IMX477_MIN_WIDTH		64U
 #define IMX477_MIN_HEIGHT		64U
@@ -949,6 +954,9 @@ struct imx477 {
 	struct v4l2_ctrl *hflip;
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *hblank;
+	struct v4l2_ctrl *test_pattern;
+	u32 tp_hblank_saved;
+	u32 tp_hblank_raised;
 
 	unsigned int link_freq_idx;
 	unsigned int num_lanes;
@@ -964,6 +972,7 @@ struct imx477 {
 	unsigned int line_length_pix;
 
 	int trigger_mode_of;
+	bool follower;
 
 	struct mutex mutex;
 
@@ -1137,13 +1146,110 @@ static void imx477_tighten_crop(struct imx477 *imx477,
 	imx477_clamp_crop(&imx477->crop);
 }
 
+static bool imx477_tp_active(struct imx477 *imx477)
+{
+	return imx477->test_pattern && imx477->test_pattern->val;
+}
+
+static unsigned int imx477_roi_left(struct imx477 *imx477)
+{
+	const struct v4l2_rect *crop = &imx477->crop;
+	unsigned int right = crop->left + crop->width;
+
+	if (!imx477->hflip->val)
+		return crop->left;
+
+	return right >= IMX477_ROI_SPAN_WIDTH ? 0 : IMX477_ROI_SPAN_WIDTH - right;
+}
+
+static unsigned int imx477_roi_top(struct imx477 *imx477)
+{
+	const struct v4l2_rect *crop = &imx477->crop;
+
+	if (!imx477->vflip->val)
+		return crop->top;
+
+	return IMX477_PIXEL_ARRAY_HEIGHT - (crop->top + crop->height);
+}
+
+struct imx477_x_window {
+	unsigned int start, end;
+	unsigned int dig_off, dig_width;
+	unsigned int out;
+};
+
+static void imx477_get_x_window(struct imx477 *imx477,
+				struct imx477_x_window *w)
+{
+	const struct imx477_base_config *cfg = imx477->base_cfg;
+	const struct v4l2_rect *crop = &imx477->crop;
+
+	if (imx477_tp_active(imx477)) {
+		w->start = 0;
+		w->end = IMX477_PIXEL_ARRAY_WIDTH - 1;
+		w->dig_off = 0;
+		w->dig_width = IMX477_PIXEL_ARRAY_WIDTH;
+		w->out = cfg->binning ? IMX477_PIXEL_ARRAY_WIDTH / 2
+				      : IMX477_PIXEL_ARRAY_WIDTH;
+		return;
+	}
+
+	w->start = imx477_roi_left(imx477);
+	w->end = w->start + crop->width - 1;
+	if (cfg->binning) {
+		w->dig_off = 0;
+		w->dig_width = crop->width;
+	} else {
+		w->dig_off = (crop->width - imx477->out_width) / 2;
+		w->dig_width = imx477->out_width;
+	}
+	w->out = imx477->out_width;
+}
+
+static int imx477_write_tp_x_window(struct imx477 *imx477, u32 tp_mode)
+{
+	struct imx477_x_window xw;
+	int ret;
+
+	imx477_get_x_window(imx477, &xw);
+
+	ret = imx477_write_reg(imx477, IMX477_REG_GRP_PARAM_HOLD,
+			       IMX477_REG_VALUE_08BIT, 1);
+	if (ret)
+		return ret;
+
+	ret = imx477_write_reg(imx477, IMX477_REG_X_ADD_STA,
+			       IMX477_REG_VALUE_16BIT, xw.start);
+	if (!ret)
+		ret = imx477_write_reg(imx477, IMX477_REG_X_ADD_END,
+				       IMX477_REG_VALUE_16BIT, xw.end);
+	if (!ret)
+		ret = imx477_write_reg(imx477, IMX477_REG_DIG_CROP_X_OFF,
+				       IMX477_REG_VALUE_16BIT, xw.dig_off);
+	if (!ret)
+		ret = imx477_write_reg(imx477, IMX477_REG_DIG_CROP_WIDTH,
+				       IMX477_REG_VALUE_16BIT, xw.dig_width);
+	if (!ret)
+		ret = imx477_write_reg(imx477, IMX477_REG_X_OUT_SIZE,
+				       IMX477_REG_VALUE_16BIT, xw.out);
+	if (!ret)
+		ret = imx477_write_reg(imx477, IMX477_REG_TEST_PATTERN,
+				       IMX477_REG_VALUE_16BIT, tp_mode);
+
+	imx477_write_reg(imx477, IMX477_REG_GRP_PARAM_HOLD,
+			 IMX477_REG_VALUE_08BIT, 0);
+	return ret;
+}
+
 static int imx477_write_dynamic_regs(struct imx477 *imx477)
 {
 	const struct imx477_base_config *cfg = imx477->base_cfg;
 	struct v4l2_rect *crop = &imx477->crop;
-	unsigned int out_w = imx477->out_width;
 	unsigned int out_h = imx477->out_height;
+	struct imx477_x_window xw;
 	int ret = 0;
+
+	imx477_get_x_window(imx477, &xw);
 
 	ret = imx477_write_reg(imx477, IMX477_REG_GRP_PARAM_HOLD,
 			       IMX477_REG_VALUE_08BIT, 1);
@@ -1156,24 +1262,23 @@ static int imx477_write_dynamic_regs(struct imx477 *imx477)
 		goto release_hold;
 
 	ret = imx477_write_reg(imx477, IMX477_REG_X_ADD_STA,
-			       IMX477_REG_VALUE_16BIT, crop->left);
+			       IMX477_REG_VALUE_16BIT, xw.start);
 	if (ret)
 		goto release_hold;
 
 	ret = imx477_write_reg(imx477, IMX477_REG_Y_ADD_STA,
-			       IMX477_REG_VALUE_16BIT, crop->top);
+			       IMX477_REG_VALUE_16BIT, imx477_roi_top(imx477));
 	if (ret)
 		goto release_hold;
 
 	ret = imx477_write_reg(imx477, IMX477_REG_X_ADD_END,
-			       IMX477_REG_VALUE_16BIT,
-			       crop->left + crop->width - 1);
+			       IMX477_REG_VALUE_16BIT, xw.end);
 	if (ret)
 		goto release_hold;
 
 	ret = imx477_write_reg(imx477, IMX477_REG_Y_ADD_END,
 			       IMX477_REG_VALUE_16BIT,
-			       crop->top + crop->height - 1);
+			       imx477_roi_top(imx477) + crop->height - 1);
 	if (ret)
 		goto release_hold;
 
@@ -1194,19 +1299,19 @@ static int imx477_write_dynamic_regs(struct imx477 *imx477)
 	if (ret)
 		goto release_hold;
 
-	if (cfg->binning) {
-		ret = imx477_write_reg(imx477, IMX477_REG_DIG_CROP_X_OFF,
-				       IMX477_REG_VALUE_16BIT, 0);
-		if (ret)
-			goto release_hold;
+	ret = imx477_write_reg(imx477, IMX477_REG_DIG_CROP_X_OFF,
+			       IMX477_REG_VALUE_16BIT, xw.dig_off);
+	if (ret)
+		goto release_hold;
 
+	ret = imx477_write_reg(imx477, IMX477_REG_DIG_CROP_WIDTH,
+			       IMX477_REG_VALUE_16BIT, xw.dig_width);
+	if (ret)
+		goto release_hold;
+
+	if (cfg->binning) {
 		ret = imx477_write_reg(imx477, IMX477_REG_DIG_CROP_Y_OFF,
 				       IMX477_REG_VALUE_16BIT, 0);
-		if (ret)
-			goto release_hold;
-
-		ret = imx477_write_reg(imx477, IMX477_REG_DIG_CROP_WIDTH,
-				       IMX477_REG_VALUE_16BIT, crop->width);
 		if (ret)
 			goto release_hold;
 
@@ -1215,20 +1320,9 @@ static int imx477_write_dynamic_regs(struct imx477 *imx477)
 		if (ret)
 			goto release_hold;
 	} else {
-		ret = imx477_write_reg(imx477, IMX477_REG_DIG_CROP_X_OFF,
-				       IMX477_REG_VALUE_16BIT,
-				       (crop->width - out_w) / 2);
-		if (ret)
-			goto release_hold;
-
 		ret = imx477_write_reg(imx477, IMX477_REG_DIG_CROP_Y_OFF,
 				       IMX477_REG_VALUE_16BIT,
 				       (crop->height - out_h) / 2);
-		if (ret)
-			goto release_hold;
-
-		ret = imx477_write_reg(imx477, IMX477_REG_DIG_CROP_WIDTH,
-				       IMX477_REG_VALUE_16BIT, out_w);
 		if (ret)
 			goto release_hold;
 
@@ -1255,7 +1349,7 @@ static int imx477_write_dynamic_regs(struct imx477 *imx477)
 		goto release_hold;
 
 	ret = imx477_write_reg(imx477, IMX477_REG_X_OUT_SIZE,
-			       IMX477_REG_VALUE_16BIT, out_w);
+			       IMX477_REG_VALUE_16BIT, xw.out);
 	if (ret)
 		goto release_hold;
 
@@ -1362,6 +1456,8 @@ static int imx477_set_frame_length(struct imx477 *imx477, unsigned int val)
 				IMX477_REG_VALUE_08BIT, imx477->long_exp_shift);
 }
 
+static void imx477_update_hblank_range(struct imx477 *imx477);
+
 static int imx477_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct imx477 *imx477 =
@@ -1369,8 +1465,16 @@ static int imx477_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct i2c_client *client = v4l2_get_subdevdata(&imx477->sd);
 	int ret = 0;
 
+	if (ctrl->id == CHC5SENSOR_CID_SYNC_FOLLOWER) {
+		imx477->follower = ctrl->val;
+		return 0;
+	}
+
 	if (ctrl->id == V4L2_CID_VBLANK)
 		imx477_adjust_exposure_range(imx477);
+
+	if (ctrl->id == V4L2_CID_TEST_PATTERN)
+		imx477_update_hblank_range(imx477);
 
 	if (pm_runtime_get_if_in_use(&client->dev) == 0)
 		return 0;
@@ -1408,9 +1512,13 @@ static int imx477_set_ctrl(struct v4l2_ctrl *ctrl)
 				       IMX477_REG_VALUE_16BIT, ctrl->val);
 		break;
 	case V4L2_CID_TEST_PATTERN:
-		ret = imx477_write_reg(imx477, IMX477_REG_TEST_PATTERN,
-				       IMX477_REG_VALUE_16BIT,
-				       imx477_test_pattern_val[ctrl->val]);
+		if (imx477->streaming)
+			ret = imx477_write_tp_x_window(imx477,
+					imx477_test_pattern_val[ctrl->val]);
+		else
+			ret = imx477_write_reg(imx477, IMX477_REG_TEST_PATTERN,
+					       IMX477_REG_VALUE_16BIT,
+					       imx477_test_pattern_val[ctrl->val]);
 		break;
 	case V4L2_CID_TEST_PATTERN_RED:
 		ret = imx477_write_reg(imx477, IMX477_REG_TEST_PATTERN_R,
@@ -1463,8 +1571,67 @@ static int imx477_set_ctrl(struct v4l2_ctrl *ctrl)
 	return ret;
 }
 
+static int imx477_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct imx477 *imx477 =
+		container_of(ctrl->handler, struct imx477, ctrl_handler);
+
+	switch (ctrl->id) {
+	case CHC5SENSOR_CID_LINE_TIME_PS:
+		ctrl->val = (s32)div_u64((u64)(imx477->out_width +
+					       imx477->hblank->val) *
+					 1000000000000ULL, IMX477_PIXEL_RATE);
+		return 0;
+	case CHC5SENSOR_CID_FRAME_LINES:
+		ctrl->val = imx477->out_height + imx477->vblank->val;
+		return 0;
+	}
+	return -EINVAL;
+}
+
 static const struct v4l2_ctrl_ops imx477_ctrl_ops = {
+	.g_volatile_ctrl = imx477_g_volatile_ctrl,
 	.s_ctrl = imx477_set_ctrl,
+};
+
+static const struct v4l2_ctrl_config imx477_follow_ctrls[] = {
+	{
+		.ops   = &imx477_ctrl_ops,
+		.id    = CHC5SENSOR_CID_SYNC_FOLLOWER,
+		.name  = "Sync Follower",
+		.type  = V4L2_CTRL_TYPE_BOOLEAN,
+		.min   = 0,
+		.max   = 1,
+		.step  = 1,
+	}, {
+		.ops   = &imx477_ctrl_ops,
+		.id    = CHC5SENSOR_CID_FOLLOWER_XHS,
+		.name  = "Follower XHS",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = 0,
+		.def   = 0,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY,
+	}, {
+		.ops   = &imx477_ctrl_ops,
+		.id    = CHC5SENSOR_CID_LINE_TIME_PS,
+		.name  = "Line Time ps",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	}, {
+		.ops   = &imx477_ctrl_ops,
+		.id    = CHC5SENSOR_CID_FRAME_LINES,
+		.name  = "Frame Lines",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	},
 };
 
 static int imx477_enum_mbus_code(struct v4l2_subdev *sd,
@@ -1585,12 +1752,12 @@ static int imx477_get_pad_format(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static void imx477_set_framing_limits(struct imx477 *imx477)
+static unsigned int imx477_line_length_min(struct imx477 *imx477)
 {
-	unsigned int frm_length_min, frm_length_default, hblank_min;
-	unsigned int out_w = imx477->out_width;
-	unsigned int out_h = imx477->out_height;
+	struct imx477_x_window xw;
 	unsigned int line_length_min;
+
+	imx477_get_x_window(imx477, &xw);
 
 	{
 		u64 tmp = link_freqs[imx477->link_freq_idx];
@@ -1598,7 +1765,7 @@ static void imx477_set_framing_limits(struct imx477 *imx477)
 
 		do_div(tmp, 1000000);
 		link_mhz = (u32)tmp;
-		num = out_w * 12 * (IMX477_PIXEL_RATE / 1000000);
+		num = xw.out * 12 * (IMX477_PIXEL_RATE / 1000000);
 		den = link_mhz * 2 * imx477->num_lanes;
 
 		line_length_min = num / den;
@@ -1610,7 +1777,7 @@ static void imx477_set_framing_limits(struct imx477 *imx477)
 
 	if (!imx477->base_cfg->binning) {
 		if (imx477->num_lanes == 2 &&
-		    imx477->crop.width >= IMX477_PIXEL_ARRAY_WIDTH) {
+		    xw.end - xw.start + 1 >= IMX477_PIXEL_ARRAY_WIDTH) {
 			if (line_length_min < imx477->base_cfg->line_length_pix)
 				line_length_min = imx477->base_cfg->line_length_pix;
 		} else {
@@ -1622,7 +1789,44 @@ static void imx477_set_framing_limits(struct imx477 *imx477)
 			line_length_min = 6720;
 	}
 
-	imx477->line_length_pix = line_length_min;
+	return line_length_min;
+}
+
+static void imx477_update_hblank_range(struct imx477 *imx477)
+{
+	unsigned int out_w = imx477->out_width;
+	unsigned int hblank_min;
+	u32 before = imx477->hblank->val;
+
+	imx477->line_length_pix = imx477_line_length_min(imx477);
+	hblank_min = imx477->line_length_pix - out_w;
+	__v4l2_ctrl_modify_range(imx477->hblank, hblank_min,
+				 IMX477_LINE_LENGTH_MAX - out_w, 1, hblank_min);
+
+	if (imx477_tp_active(imx477)) {
+		if (imx477->hblank->val != before) {
+			imx477->tp_hblank_saved = before;
+			imx477->tp_hblank_raised = imx477->hblank->val;
+		}
+	} else if (imx477->tp_hblank_raised) {
+		if (imx477->hblank->val == imx477->tp_hblank_raised &&
+		    imx477->tp_hblank_saved >= hblank_min)
+			__v4l2_ctrl_s_ctrl(imx477->hblank,
+					   imx477->tp_hblank_saved);
+		imx477->tp_hblank_saved = 0;
+		imx477->tp_hblank_raised = 0;
+	}
+}
+
+static void imx477_set_framing_limits(struct imx477 *imx477)
+{
+	unsigned int frm_length_min, frm_length_default, hblank_min;
+	unsigned int out_w = imx477->out_width;
+	unsigned int out_h = imx477->out_height;
+
+	imx477->line_length_pix = imx477_line_length_min(imx477);
+	imx477->tp_hblank_saved = 0;
+	imx477->tp_hblank_raised = 0;
 
 	frm_length_min = out_h + IMX477_VBLANK_MIN;
 
@@ -1931,7 +2135,12 @@ static int imx477_start_streaming(struct imx477 *imx477)
 	if (ret)
 		return ret;
 
-	tm = (imx477->trigger_mode_of >= 0) ? imx477->trigger_mode_of : trigger_mode;
+	if (imx477->trigger_mode_of >= 0)
+		tm = imx477->trigger_mode_of;
+	else if (trigger_mode)
+		tm = trigger_mode;
+	else
+		tm = imx477->follower ? IMX477_TRIGGER_SINK : IMX477_TRIGGER_SOURCE;
 	imx477_write_reg(imx477, IMX477_REG_MC_MODE,
 			 IMX477_REG_VALUE_08BIT, (tm > 0) ? 1 : 0);
 	imx477_write_reg(imx477, IMX477_REG_MS_SEL,
@@ -2017,6 +2226,9 @@ static int imx477_power_on(struct device *dev)
 			__func__);
 		return ret;
 	}
+
+	gpiod_set_value_cansleep(imx477->reset_gpio, 0);
+	usleep_range(10, 20);
 
 	ret = clk_prepare_enable(imx477->xclk);
 	if (ret) {
@@ -2159,7 +2371,7 @@ static int imx477_init_controls(struct imx477 *imx477)
 	int ret;
 
 	ctrl_hdlr = &imx477->ctrl_handler;
-	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 16);
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 20);
 	if (ret)
 		return ret;
 
@@ -2212,10 +2424,11 @@ static int imx477_init_controls(struct imx477 *imx477)
 	if (imx477->vflip)
 		imx477->vflip->flags |= V4L2_CTRL_FLAG_MODIFY_LAYOUT;
 
-	v4l2_ctrl_new_std_menu_items(ctrl_hdlr, &imx477_ctrl_ops,
-				     V4L2_CID_TEST_PATTERN,
-				     ARRAY_SIZE(imx477_test_pattern_menu) - 1,
-				     0, 0, imx477_test_pattern_menu);
+	imx477->test_pattern =
+		v4l2_ctrl_new_std_menu_items(ctrl_hdlr, &imx477_ctrl_ops,
+					     V4L2_CID_TEST_PATTERN,
+					     ARRAY_SIZE(imx477_test_pattern_menu) - 1,
+					     0, 0, imx477_test_pattern_menu);
 	for (i = 0; i < 4; i++) {
 		v4l2_ctrl_new_std(ctrl_hdlr, &imx477_ctrl_ops,
 				  V4L2_CID_TEST_PATTERN_RED + i,
@@ -2224,6 +2437,10 @@ static int imx477_init_controls(struct imx477 *imx477)
 				  IMX477_TEST_PATTERN_COLOUR_STEP,
 				  IMX477_TEST_PATTERN_COLOUR_MAX);
 	}
+
+	if (imx477->trigger_mode_of < 0)
+		for (i = 0; i < ARRAY_SIZE(imx477_follow_ctrls); i++)
+			v4l2_ctrl_new_custom(ctrl_hdlr, &imx477_follow_ctrls[i], NULL);
 
 	if (ctrl_hdlr->error) {
 		ret = ctrl_hdlr->error;
@@ -2392,7 +2609,7 @@ static int imx477_probe(struct i2c_client *client)
 	}
 
 	imx477->reset_gpio = devm_gpiod_get_optional(dev, "reset",
-						     GPIOD_OUT_HIGH);
+						     GPIOD_OUT_LOW);
 
 	ret = imx477_power_on(dev);
 	if (ret)

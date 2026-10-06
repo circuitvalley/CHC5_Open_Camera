@@ -15,8 +15,6 @@ GVCP_SERVER_DEPENDENCIES = systemd
 define GVCP_SERVER_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 755 $(@D)/gvcp_server \
 		$(TARGET_DIR)/usr/bin/gvcp_server
-	$(INSTALL) -D -m 644 $(@D)/device.xml \
-		$(TARGET_DIR)/etc/cam/device.xml
 	$(INSTALL) -D -m 644 $(@D)/device.xml.template \
 		$(TARGET_DIR)/etc/cam/device.xml.template
 endef

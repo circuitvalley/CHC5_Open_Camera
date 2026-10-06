@@ -506,6 +506,9 @@ static const struct imx294_reg mode_common_regs[] = {
 
     {0xFFFE,0x0A},
 
+};
+
+static const struct imx294_reg imx294_stream_on_regs[] = {
     {0x3000,0x02},
     {0x35E5,0x92},
     {0x35E5,0x9A},
@@ -1789,12 +1792,17 @@ imx294_find_mode(const struct imx294_mode *list, unsigned int num,
 	unsigned int best_err = UINT_MAX;
 	unsigned int pass, i;
 
-	for (pass = 0; pass < 2 && !best; pass++) {
+	for (pass = 0; pass < 3 && !best; pass++) {
 		for (i = 0; i < num; i++) {
 			const struct imx294_mode *m = &list[i];
 			unsigned int err;
+			unsigned int hbin = m->hbin ? : 1;
+			unsigned int emit_max = m->hnum > IMX294_HTRIM_BASE ?
+				(m->hnum - IMX294_HTRIM_BASE) / hbin : m->width;
 
-			if (pass == 0 && (m->hbin > 1) != want_binning)
+			if (pass < 2 && (m->hbin > 1) != want_binning)
+				continue;
+			if (pass == 0 && w > emit_max)
 				continue;
 
 			err = abs_diff(m->width, w) + abs_diff(m->height, h);
@@ -1980,6 +1988,11 @@ static int imx294_start_streaming(struct imx294 *imx294)
 	if (ret)
 		return ret;
 
+	ret = imx294_write_regs(imx294, imx294_stream_on_regs,
+				ARRAY_SIZE(imx294_stream_on_regs));
+	if (ret)
+		dev_err(&client->dev, "%s failed to leave standby\n", __func__);
+
 	return ret;
 }
 
@@ -2047,6 +2060,9 @@ static int imx294_power_on(struct device *dev)
 			__func__);
 		return ret;
 	}
+
+	gpiod_set_value_cansleep(imx294->reset_gpio, 0);
+	usleep_range(10, 20);
 
 	ret = clk_prepare_enable(imx294->xclk);
 	if (ret) {
@@ -2591,8 +2607,8 @@ static int imx294_probe(struct i2c_client *client)
 	}
 
 	imx294->reset_gpio = devm_gpiod_get_optional(dev, "reset",
-						     GPIOD_OUT_HIGH);
-	
+						     GPIOD_OUT_LOW);
+
 	ret = imx294_power_on(dev);
 	if (ret)
 		return ret;

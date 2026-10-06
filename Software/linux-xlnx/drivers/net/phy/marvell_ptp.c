@@ -390,6 +390,9 @@ static int marvell_phy_ptp_hwtstamp(struct mii_timestamper *mii_ts,
 
 	if (kcfg.tx_type != HWTSTAMP_TX_OFF ||
 	    kcfg.rx_filter != HWTSTAMP_FILTER_NONE) {
+		if (!phy_interrupt_is_valid(to_phy_device(phy_ptp->ts.dev)))
+			return -EOPNOTSUPP;
+
 		err = marvell_phy_ptp_setup(phy_ptp->ts.dev);
 		if (err)
 			return err;
@@ -534,6 +537,20 @@ int marvell_phy_ptp_event_read(struct phy_device *phydev, u64 *ns, u8 *count)
 }
 EXPORT_SYMBOL_GPL(marvell_phy_ptp_event_read);
 
+bool marvell_phy_ptp_timestamping(struct phy_device *phydev)
+{
+	struct marvell_phy_ptp *phy_ptp;
+	bool on;
+
+	mutex_lock(&marvell_phy_ptp_ext_lock);
+	phy_ptp = marvell_phy_ptp_get(phydev);
+	on = phy_ptp && READ_ONCE(phy_ptp->ts.rx_filter) != HWTSTAMP_FILTER_NONE;
+	mutex_unlock(&marvell_phy_ptp_ext_lock);
+
+	return on;
+}
+EXPORT_SYMBOL_GPL(marvell_phy_ptp_timestamping);
+
 bool marvell_phy_ptp_event_active(struct phy_device *phydev)
 {
 	struct marvell_phy_ptp *phy_ptp = marvell_phy_ptp_get(phydev);
@@ -599,6 +616,11 @@ static int __marvell_phy_ptp_probe(struct phy_device *phydev)
 	int err;
 
 	dev = &phydev->mdio.dev;
+
+	if (!phy_interrupt_is_valid(phydev)) {
+		phydev_err(phydev, "PTP needs the PHY interrupt (INTn); none in the device tree\n");
+		return -EOPNOTSUPP;
+	}
 
 	phy_ptp = devm_kzalloc(dev, sizeof(*phy_ptp), GFP_KERNEL);
 	if (!phy_ptp)

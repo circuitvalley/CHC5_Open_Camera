@@ -11,30 +11,44 @@
 
 #define UVC_MODE_MAX          8u
 #define UVC_EEPROM_ADDR       0xA0u
+#define UVC_EEPROM_READ_RETRIES 4u
 #define UVC_MODEPART_BASE     0x38000u
 #define UVC_MODE_HDR_SIZE     64u
 #define UVC_MODE_SLOT_SIZE    0x2800u
+#define UVC_L2_MODE_SLOT      0x38100u
+#define UVC_L2_MODE_HDR_SIZE  128u
+#define UVC_MODE_HDR_MAX      128u
 #define UVC_MODE_MAGIC        0x444F4D43u
 #define UVC_MODE_ENTRY_SIZE   16u
 
 #define UVC_HDR_OFF_GAIN_MAX_DB10   36u
 #define UVC_GAIN_MAX_DB10_FALLBACK  720u
 
+#define UVC_HDR_OFF_TP_COUNT        38u
+#define UVC_TP_MAX_FALLBACK         8u
+
 typedef struct __attribute__((packed)) uvc_mode_s {
     uint16_t width;
     uint16_t height;
     uint16_t fps;
-    uint16_t reserved0;
+    uint16_t offset_x;
     uint32_t pixel_format;
     uint8_t  binning;
     uint8_t  src;
-    uint16_t reserved;
+    uint16_t offset_y;
 } uvc_mode_t;
 
 extern uvc_mode_t g_uvc_modes[UVC_MODE_MAX];
 extern uint8_t    g_uvc_nmodes;
 
+extern uint16_t   g_uvc_hs_fps;
+
+void CyFxUvcApplyIdentity(void);
+extern uint8_t CyFxUSBSerialDscr[];
+
 extern uint16_t   g_uvc_gain_max_db10;
+
+extern uint8_t    g_uvc_tp_max;
 
 void CyFxUvcLoadModesAndBuild(void);
 

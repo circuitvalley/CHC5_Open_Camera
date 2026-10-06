@@ -106,6 +106,12 @@ static unsigned int imx678_gain_code(unsigned int db10)
 #define IMX678_REG_XXS_OUTSEL		0x30a4
 #define IMX678_REG_XXS_DRV		0x30a6
 #define IMX678_REG_EXTMODE		0x30ce
+#define IMX678_SYNC_LEADER_EXTMODE		0x00
+#define IMX678_SYNC_LEADER_DRV		0x00
+#define IMX678_SYNC_LEADER_OUTSEL		0x0a
+#define IMX678_SYNC_FOLLOW_EXTMODE		0x01
+#define IMX678_SYNC_FOLLOW_DRV		0x03
+#define IMX678_SYNC_FOLLOW_OUTSEL		0x08
 
 #define IMX678_INTERNAL_CLOCK		74250000U
 
@@ -770,10 +776,13 @@ struct imx678 {
 
 	struct v4l2_rect crop;
 	struct v4l2_rect compose;
+	unsigned int pad_left;
+	unsigned int pad_right;
 
 	unsigned int hmax_min;
 	unsigned int hmax;
 	unsigned int vmax;
+	bool follower;
 
 	struct mutex mutex;
 
@@ -920,9 +929,6 @@ imx678_binning_from_ratio(const struct v4l2_rect *crop,
 	if (compose_w <= crop->width / 2 && compose_h <= crop->height / 2)
 		return bin;
 
-	if (compose_w < IMX678_MIN_WIDTH || compose_h < IMX678_MIN_HEIGHT)
-		return bin;
-
 	return &base_configs[IMX678_BASE_MODE_FULL];
 }
 
@@ -946,8 +952,6 @@ static void imx678_clamp_align(unsigned int *width, unsigned int *height,
 	if (*height < min_h)
 		*height = min_h;
 
-	if (*width * scale == IMX678_HWIDTH_FORBIDDEN)
-		*width -= IMX678_WIDTH_STEP;
 }
 
 static void imx678_clamp_crop(struct v4l2_rect *crop)
@@ -971,9 +975,6 @@ static void imx678_clamp_crop(struct v4l2_rect *crop)
 
 	crop->width = rounddown(crop->width, IMX678_WIDTH_STEP);
 	crop->height = rounddown(crop->height, IMX678_HEIGHT_STEP);
-
-	if (crop->width == IMX678_HWIDTH_FORBIDDEN)
-		crop->width -= IMX678_WIDTH_STEP;
 
 	if (crop->left + crop->width > IMX678_PIXEL_ARRAY_WIDTH)
 		crop->left = IMX678_PIXEL_ARRAY_WIDTH - crop->width;
@@ -1012,10 +1013,56 @@ imx678_base_reg_list(const struct imx678_base_config *cfg, u32 fmt_code)
 	return imx678_code_is_10bit(fmt_code) ? &full_10 : &full_12;
 }
 
+static void imx678_hw_window(struct imx678 *imx678, struct v4l2_rect *hw,
+			     unsigned int *pad_l, unsigned int *pad_r)
+{
+	unsigned int l = 0, r = 0;
+
+	*hw = imx678->crop;
+
+	if (hw->width == IMX678_HWIDTH_FORBIDDEN) {
+		hw->width += IMX678_WIDTH_STEP;
+		if (hw->left + hw->width <= IMX678_PIXEL_ARRAY_WIDTH) {
+			r = IMX678_WIDTH_STEP;
+		} else {
+			hw->left -= IMX678_WIDTH_STEP;
+			l = IMX678_WIDTH_STEP;
+		}
+	}
+
+	if (pad_l)
+		*pad_l = l;
+	if (pad_r)
+		*pad_r = r;
+
+	if (imx678->hflip && imx678->hflip->val)
+		hw->left = IMX678_PIXEL_ARRAY_WIDTH - (hw->left + hw->width);
+	if (imx678->vflip && imx678->vflip->val)
+		hw->top = IMX678_PIXEL_ARRAY_HEIGHT - (hw->top + hw->height);
+}
+
+static void imx678_update_wire(struct imx678 *imx678)
+{
+	unsigned int scale = imx678->base_cfg && imx678->base_cfg->binning ?
+			     2 : 1;
+	struct v4l2_rect hw;
+	unsigned int l, r;
+
+	imx678_hw_window(imx678, &hw, &l, &r);
+	imx678->pad_left = l / scale;
+	imx678->pad_right = r / scale;
+	imx678->out_width = imx678->compose.width +
+			    imx678->pad_left + imx678->pad_right;
+	imx678->out_height = imx678->compose.height;
+}
+
 static int imx678_write_dynamic_regs(struct imx678 *imx678)
 {
-	const struct v4l2_rect *crop = &imx678->crop;
+	struct v4l2_rect hw;
+	const struct v4l2_rect *crop = &hw;
 	int ret;
+
+	imx678_hw_window(imx678, &hw, NULL, NULL);
 
 	imx678_reghold(imx678, true);
 
@@ -1079,6 +1126,8 @@ static void imx678_set_default_format(struct imx678 *imx678)
 	imx678->compose.top = 0;
 	imx678->compose.width = IMX678_PIXEL_ARRAY_WIDTH;
 	imx678->compose.height = IMX678_PIXEL_ARRAY_HEIGHT;
+	imx678->pad_left = 0;
+	imx678->pad_right = 0;
 
 	imx678->hmax_min = imx678_hmax_min(imx678, imx678->fmt_code);
 	imx678->hmax = imx678->hmax_min;
@@ -1185,6 +1234,11 @@ static int imx678_set_ctrl(struct v4l2_ctrl *ctrl)
 	if (ctrl->id == V4L2_CID_VBLANK) {
 		imx678->vmax = (imx678->out_height + ctrl->val) & ~1U;
 		imx678_adjust_exposure_range(imx678);
+	}
+
+	if (ctrl->id == CHC5SENSOR_CID_SYNC_FOLLOWER) {
+		imx678->follower = ctrl->val;
+		return 0;
 	}
 
 	if (ctrl->id == V4L2_CID_IMX678_HCG_LEVEL)
@@ -1300,6 +1354,35 @@ static int imx678_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 	struct imx678 *imx678 =
 		container_of(ctrl->handler, struct imx678, ctrl_handler);
 
+	if (ctrl->id == CHC5SENSOR_CID_LINE_TIME_PS) {
+		ctrl->val = (s32)div_u64((u64)imx678->hmax * 1000000000000ULL,
+					 IMX678_INTERNAL_CLOCK);
+		return 0;
+	}
+	if (ctrl->id == CHC5SENSOR_CID_FRAME_LINES) {
+		ctrl->val = imx678->vmax;
+		return 0;
+	}
+
+	if (imx678->pad_left || imx678->pad_right) {
+		switch (ctrl->id) {
+		case CHC5SENSOR_CID_OB_LEFT:
+			ctrl->val = imx678->pad_left;
+			return 0;
+		case CHC5SENSOR_CID_OB_RIGHT:
+			ctrl->val = imx678->pad_right;
+			return 0;
+		case CHC5SENSOR_CID_OB_TOP:
+		case CHC5SENSOR_CID_OB_BOTTOM:
+			ctrl->val = 0;
+			return 0;
+		case CHC5SENSOR_CID_OB_ON_IMAGE_DT:
+			ctrl->val = 1;
+			return 0;
+		}
+		return -EINVAL;
+	}
+
 	switch (ctrl->id) {
 	case CHC5SENSOR_CID_OB_TOP:
 		ctrl->val = imx678->base_cfg && imx678->base_cfg->binning ?
@@ -1336,6 +1419,45 @@ static const struct v4l2_ctrl_ops imx678_ctrl_ops = {
 		.flags	= V4L2_CTRL_FLAG_READ_ONLY |			\
 			  V4L2_CTRL_FLAG_VOLATILE,			\
 	}
+
+static const struct v4l2_ctrl_config imx678_follow_ctrls[] = {
+	{
+		.ops   = &imx678_ctrl_ops,
+		.id    = CHC5SENSOR_CID_SYNC_FOLLOWER,
+		.name  = "Sync Follower",
+		.type  = V4L2_CTRL_TYPE_BOOLEAN,
+		.min   = 0,
+		.max   = 1,
+		.step  = 1,
+	}, {
+		.ops   = &imx678_ctrl_ops,
+		.id    = CHC5SENSOR_CID_FOLLOWER_XHS,
+		.name  = "Follower XHS",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = 0,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY,
+	}, {
+		.ops   = &imx678_ctrl_ops,
+		.id    = CHC5SENSOR_CID_LINE_TIME_PS,
+		.name  = "Line Time ps",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	}, {
+		.ops   = &imx678_ctrl_ops,
+		.id    = CHC5SENSOR_CID_FRAME_LINES,
+		.name  = "Frame Lines",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	},
+};
 
 static const struct v4l2_ctrl_config imx678_ob_ctrls[] = {
 	IMX678_OB_CTRL(CHC5SENSOR_CID_OB_LEFT,   "Optical Black Left"),
@@ -1586,6 +1708,10 @@ static int imx678_set_pad_format(struct v4l2_subdev *sd,
 
 		fmt->format.code = imx678_code_for_cfg(fmt->format.code, cfg);
 		fmt->format.width = req_width;
+		if (req_width * (cfg->binning ? 2 : 1) ==
+		    IMX678_HWIDTH_FORBIDDEN)
+			fmt->format.width += IMX678_WIDTH_STEP /
+					     (cfg->binning ? 2 : 1);
 		fmt->format.height = req_height;
 		fmt->format.field = V4L2_FIELD_NONE;
 		imx678_reset_colorspace(&fmt->format);
@@ -1596,13 +1722,13 @@ static int imx678_set_pad_format(struct v4l2_subdev *sd,
 			*framefmt = fmt->format;
 		} else {
 			imx678->base_cfg = cfg;
-			imx678->out_width = req_width;
-			imx678->out_height = req_height;
 			imx678->compose.width = req_width;
 			imx678->compose.height = req_height;
 			imx678->fmt_code = fmt->format.code;
 
 			imx678_tighten_crop(imx678, cfg);
+			imx678_update_wire(imx678);
+			fmt->format.width = imx678->out_width;
 
 			imx678_set_framing_limits(imx678);
 		}
@@ -1701,10 +1827,9 @@ static int imx678_set_selection(struct v4l2_subdev *sd,
 			imx678->compose.width = compose_w;
 			imx678->compose.height = compose_h;
 			imx678->base_cfg = cfg;
-			imx678->out_width = compose_w;
-			imx678->out_height = compose_h;
 			imx678->fmt_code = imx678_code_for_cfg(imx678->fmt_code,
 							       cfg);
+			imx678_update_wire(imx678);
 			imx678_set_framing_limits(imx678);
 		}
 
@@ -1725,8 +1850,6 @@ static int imx678_set_selection(struct v4l2_subdev *sd,
 			imx678->compose.width = compose_w;
 			imx678->compose.height = compose_h;
 			imx678->base_cfg = cfg;
-			imx678->out_width = compose_w;
-			imx678->out_height = compose_h;
 
 			imx678_tighten_crop(imx678, cfg);
 
@@ -1736,6 +1859,7 @@ static int imx678_set_selection(struct v4l2_subdev *sd,
 			imx678->fmt_code = imx678_code_for_cfg(imx678->fmt_code,
 							       cfg);
 
+			imx678_update_wire(imx678);
 			imx678_set_framing_limits(imx678);
 		}
 
@@ -1803,6 +1927,17 @@ static int imx678_start_streaming(struct imx678 *imx678)
 	__v4l2_ctrl_s_ctrl(imx678->shr_ctrl, 0);
 
 	ret = __v4l2_ctrl_handler_setup(imx678->sd.ctrl_handler);
+	if (ret)
+		return ret;
+
+	ret = imx678_write_reg(imx678, IMX678_REG_EXTMODE, 1, imx678->follower ?
+			       IMX678_SYNC_FOLLOW_EXTMODE : IMX678_SYNC_LEADER_EXTMODE);
+	if (!ret)
+		ret = imx678_write_reg(imx678, IMX678_REG_XXS_DRV, 1, imx678->follower ?
+				       IMX678_SYNC_FOLLOW_DRV : IMX678_SYNC_LEADER_DRV);
+	if (!ret)
+		ret = imx678_write_reg(imx678, IMX678_REG_XXS_OUTSEL, 1, imx678->follower ?
+				       IMX678_SYNC_FOLLOW_OUTSEL : IMX678_SYNC_LEADER_OUTSEL);
 	if (ret)
 		return ret;
 
@@ -1888,6 +2023,9 @@ static int imx678_power_on(struct device *dev)
 			__func__);
 		return ret;
 	}
+
+	gpiod_set_value_cansleep(imx678->reset_gpio, 0);
+	usleep_range(10, 20);
 
 	ret = clk_prepare_enable(imx678->xclk);
 	if (ret) {
@@ -2029,7 +2167,7 @@ static int imx678_init_controls(struct imx678 *imx678)
 	int ret;
 
 	ctrl_hdlr = &imx678->ctrl_handler;
-	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 25);
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 29);
 	if (ret)
 		return ret;
 
@@ -2110,6 +2248,9 @@ static int imx678_init_controls(struct imx678 *imx678)
 
 		for (i = 0; i < ARRAY_SIZE(imx678_ob_ctrls); i++)
 			v4l2_ctrl_new_custom(ctrl_hdlr, &imx678_ob_ctrls[i], NULL);
+
+		for (i = 0; i < ARRAY_SIZE(imx678_follow_ctrls); i++)
+			v4l2_ctrl_new_custom(ctrl_hdlr, &imx678_follow_ctrls[i], NULL);
 	}
 
 	if (ctrl_hdlr->error) {
@@ -2285,7 +2426,7 @@ static int imx678_probe(struct i2c_client *client)
 	}
 
 	imx678->reset_gpio = devm_gpiod_get_optional(dev, "reset",
-						     GPIOD_OUT_HIGH);
+						     GPIOD_OUT_LOW);
 
 	ret = imx678_power_on(dev);
 	if (ret)

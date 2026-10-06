@@ -37,41 +37,22 @@ if [ -s "${FACTORY_CRED}" ]; then
 	fi
 fi
 
-reserve_dev() {
-	for d in /sys/class/mtd/mtd*; do
-		case "$d" in *ro) continue ;; esac
-		[ -f "$d/name" ] || continue
-		if [ "$(cat "$d/name")" = "reserve" ]; then
-			echo "/dev/$(basename "$d")"
-			return 0
-		fi
-	done
-	if grep -q '^/dev/mmcblk0p8 /var ' /proc/mounts && [ -b /dev/mmcblk0p5 ]; then
-		echo /dev/mmcblk0p5
-	fi
-	return 0
-}
 if [ -z "${cred_hash}" ]; then
-	RDEV=$(reserve_dev) || RDEV=""
-	if [ -n "${RDEV}" ]; then
-		rec=$(head -c 1024 "${RDEV}" 2>/dev/null | tr -d '\000\377') || rec=""
-		r_mac=$(printf '%s\n' "${rec}" | sed -n 's/^mac=//p' | head -1)
-		r_hash=$(printf '%s\n' "${rec}" | sed -n 's/^hash=//p' | head -1)
-		if [ "$(printf '%s\n' "${rec}" | head -1)" = "CHC5-FACTORY-CRED v1" ] &&
-		   printf '%s\n' "${rec}" | grep -qx 'end' &&
-		   [ "${r_mac}" = "${MAC}" ]; then
-			case "${r_hash}" in
-				'$'*'$'*'$'*)
-					cred_hash="${r_hash}"
-					cred_src="the reserve copy on ${RDEV}"
-					umask 077
-					printf 'mac=%s\nhash=%s\n' "${MAC}" "${cred_hash}" > "${FACTORY_CRED}.tmp"
-					sync
-					mv -f "${FACTORY_CRED}.tmp" "${FACTORY_CRED}"
-					umask 022
-					;;
-			esac
-		fi
+	rec=$(fw_printenv -l /run -n chc5_factory_cred 2>/dev/null) || rec=""
+	r_mac="${rec%%,*}"
+	r_hash="${rec#*,}"
+	if [ -n "${rec}" ] && [ "${r_mac}" = "${MAC}" ]; then
+		case "${r_hash}" in
+			'$'*'$'*'$'*)
+				cred_hash="${r_hash}"
+				cred_src="the u-boot environment copy (chc5_factory_cred)"
+				umask 077
+				printf 'mac=%s\nhash=%s\n' "${MAC}" "${cred_hash}" > "${FACTORY_CRED}.tmp"
+				sync
+				mv -f "${FACTORY_CRED}.tmp" "${FACTORY_CRED}"
+				umask 022
+				;;
+		esac
 	fi
 fi
 

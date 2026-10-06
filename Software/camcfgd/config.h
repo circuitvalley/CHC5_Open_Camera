@@ -75,8 +75,10 @@ void config_set_ae_metering_mode(uint8_t mode);
 void config_publish_exposure(void);
 
 void config_mark_stream_dirty(void);
+void config_mark_sensor_ctrl_dirty(void);
 
 void config_clear_pending(void);
+void config_clear_pending_seen(uint32_t pending_gen);
 
 void config_apply_imaging(uint16_t hdmi_max_fps, uint16_t hdmi_crop_x,
                           uint16_t hdmi_crop_y, float ae_target,
@@ -105,6 +107,12 @@ bool config_get_usb_active(void);
 
 void     config_set_ae_exp_lower_us(uint32_t us);
 void     config_set_ae_exp_upper_us(uint32_t us);
+
+#define CFG_AE_GAIN_UNSET  0xFFFFu
+void     config_set_ae_gain_limits_db10(uint16_t lower, uint16_t upper);
+void     config_set_ae_gain_lower_db10(uint16_t v);
+void     config_set_ae_gain_upper_db10(uint16_t v);
+void     config_get_ae_gain_limits_db10(uint16_t *lower, uint16_t *upper);
 
 #define CFG_LINK_USB 0
 #define CFG_LINK_ETH 1
@@ -150,12 +158,28 @@ void config_get_hdmi_crop(uint16_t *x, uint16_t *y, uint8_t *automatic);
 
 uint32_t config_wait_dirty(void);
 
+struct camcfg_snapshot_s {
+    struct camcfg_state_s state;
+    uint8_t  usb_seq;
+    bool     usb_seq_ok;
+    uint32_t start_gen;
+    uint32_t pending_gen;
+    unsigned camio_gen;
+};
+uint32_t config_wait_dirty_snapshot(struct camcfg_snapshot_s *snap);
+
+void config_usb_block_seen(uint8_t write_seq);
+bool config_get_usb_block_seen(uint8_t *write_seq);
+void config_set_usb_block_applied(uint8_t write_seq);
+
 uint32_t config_peek_dirty(void);
 
 void config_signal_shutdown(void);
 
-void config_set_camio(const struct camio_cfg *cfg);
+void config_update_camio(const struct camio_cfg *cfg, uint32_t mask);
 void config_get_camio(struct camio_cfg *out);
+struct camio_facts;
+void config_get_camio_facts(struct camio_facts *f);
 
 void config_publish_camio(void);
 

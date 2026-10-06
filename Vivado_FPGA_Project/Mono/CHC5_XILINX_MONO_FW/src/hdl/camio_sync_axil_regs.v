@@ -38,11 +38,17 @@ module camio_sync_axil_regs #(
 
     output wire               o_enable,
     output wire               o_soft_reset,
+    output wire               o_sw_trig,
     output wire [1:0]         o_in_func,
     output wire [1:0]         o_in_activation,
     output wire               o_in_invert,
-    output wire [DELAY_W-1:0] o_in_delay,
+    output wire [23:0]        o_in_filter,
     output wire [DIV_W-1:0]   o_in_divider,
+    output wire [1:0]         o_trig_src,
+    output wire               o_width_mode,
+    output wire [30:0]        o_trig_delay,
+    output wire [30:0]        o_trig_width,
+    output wire [30:0]        o_trig_minper,
     output wire               o_strobe_en,
     output wire               o_strobe_invert,
     output wire [1:0]         o_strobe_src,
@@ -52,6 +58,7 @@ module camio_sync_axil_regs #(
     output wire [2:0]         o_out_src,
     output wire               o_out_invert,
     output wire               o_out_user_value,
+    output wire               o_native_low,
     output wire [1:0]         o_sync_role,
     output wire               o_xvs_dir,
     output wire               o_xhs_dir,
@@ -87,6 +94,7 @@ module camio_sync_axil_regs #(
     input  wire [31:0]        i_status,
     input  wire [31:0]        i_in_status,
     input  wire [31:0]        i_sync_status,
+    input  wire [31:0]        i_trig_count,
 
     input  wire [63:0]        i_time,
     input  wire [31:0]        i_ptp_status,
@@ -97,13 +105,12 @@ module camio_sync_axil_regs #(
     input  wire [31:0]        i_cap_status,
     input  wire               i_commit_busy
 );
-    localparam [31:0] VERSION_VAL = 32'hCC5A_0200;
+    localparam [31:0] VERSION_VAL = 32'hCC5A_0301;
 
     localparam [6:0] A_VERSION    = 7'd0;
     localparam [6:0] A_CONTROL    = 7'd1;
     localparam [6:0] A_STATUS     = 7'd2;
     localparam [6:0] A_IN_CFG     = 7'd4;
-    localparam [6:0] A_IN_DELAY   = 7'd6;
     localparam [6:0] A_IN_DIVIDER = 7'd7;
     localparam [6:0] A_IN_STATUS  = 7'd8;
     localparam [6:0] A_ST_CFG     = 7'd12;
@@ -114,6 +121,12 @@ module camio_sync_axil_regs #(
     localparam [6:0] A_SYNC_CFG   = 7'd24;
     localparam [6:0] A_SYNC_TROUTE= 7'd26;
     localparam [6:0] A_SYNC_STATUS= 7'd27;
+    localparam [6:0] A_TRIG_CFG   = 7'd32;
+    localparam [6:0] A_TRIG_DELAY = 7'd33;
+    localparam [6:0] A_TRIG_WIDTH = 7'd34;
+    localparam [6:0] A_TRIG_MINPER= 7'd35;
+    localparam [6:0] A_IN_FILTER  = 7'd36;
+    localparam [6:0] A_TRIG_COUNT = 7'd37;
     localparam [6:0] A_PTP_CTRL   = 7'd64;
     localparam [6:0] A_PTP_TIME_LO= 7'd65;
     localparam [6:0] A_PTP_TIME_HI= 7'd66;
@@ -141,18 +154,20 @@ module camio_sync_axil_regs #(
 
     reg        aw_en, awready_r, wready_r, bvalid_r, arready_r, rvalid_r;
     reg [31:0] rdata_r;
-    reg        soft_reset_r;
+    reg        soft_reset_r, sw_trig_r;
 
     reg               en_r;
     reg [1:0]         in_func_r, in_act_r;
     reg               in_inv_r;
-    reg [DELAY_W-1:0] in_delay_r;
     reg [DIV_W-1:0]   in_div_r;
+    reg [23:0]        in_filt_r;
+    reg [2:0]         trig_cfg_r;
+    reg [30:0]        trig_dly_r, trig_wid_r, trig_mp_r;
     reg               st_en_r, st_inv_r;
     reg [1:0]         st_src_r;
     reg [DELAY_W-1:0] st_delay_r, st_dur_r, st_minon_r;
     reg [2:0]         out_src_r;
-    reg               out_inv_r, out_uval_r;
+    reg               out_inv_r, out_uval_r, out_nlow_r;
     reg [1:0]         sy_role_r;
     reg               sy_xvsdir_r, sy_xhsdir_r, sy_xvspol_r, sy_xhspol_r, sy_roleby_r;
     reg [1:0]         sy_troute_r;
@@ -178,12 +193,13 @@ module camio_sync_axil_regs #(
 
     always @(posedge aclk) begin
         if (!aresetn) begin
-            awready_r<=1'b0; wready_r<=1'b0; bvalid_r<=1'b0; aw_en<=1'b1; soft_reset_r<=1'b0;
+            awready_r<=1'b0; wready_r<=1'b0; bvalid_r<=1'b0; aw_en<=1'b1; soft_reset_r<=1'b0; sw_trig_r<=1'b0;
             en_r<=1'b0;
-            in_func_r<=2'd0; in_act_r<=2'd0; in_inv_r<=1'b0; in_delay_r<=0; in_div_r<=0;
+            in_func_r<=2'd0; in_act_r<=2'd0; in_inv_r<=1'b0; in_div_r<=0; in_filt_r<=24'd0;
+            trig_cfg_r<=3'd0; trig_dly_r<=31'd0; trig_wid_r<=31'd0; trig_mp_r<=31'd0;
             st_en_r<=1'b0; st_inv_r<=1'b0; st_src_r<=2'd0;
             st_delay_r<=0; st_dur_r<=0; st_minon_r<=0;
-            out_src_r<=3'd0; out_inv_r<=1'b0; out_uval_r<=1'b0;
+            out_src_r<=3'd0; out_inv_r<=1'b0; out_uval_r<=1'b0; out_nlow_r<=1'b0;
             sy_role_r<=2'd0; sy_xvsdir_r<=1'b0; sy_xhsdir_r<=1'b0;
             sy_xvspol_r<=1'b0; sy_xhspol_r<=1'b0; sy_roleby_r<=1'b0;
             sy_troute_r<=2'd0;
@@ -196,6 +212,7 @@ module camio_sync_axil_regs #(
             cap_cfg_r<=5'd0;
         end else begin
             soft_reset_r   <= 1'b0;
+            sw_trig_r      <= 1'b0;
             load_pulse_r   <= 1'b0;
             commit_pulse_r <= 1'b0;
             evt_arm_r      <= 1'b0;
@@ -211,19 +228,24 @@ module camio_sync_axil_regs #(
 
             if (wr_hit) begin
                 case (wr_addr)
-                    A_CONTROL:     begin en_r <= s_axi_wdata[0]; soft_reset_r <= s_axi_wdata[1]; end
+                    A_CONTROL:     begin en_r <= s_axi_wdata[0]; soft_reset_r <= s_axi_wdata[1]; sw_trig_r <= s_axi_wdata[2]; end
                     A_IN_CFG:      begin in_func_r <= s_axi_wdata[1:0]; in_act_r <= s_axi_wdata[3:2]; in_inv_r <= s_axi_wdata[4]; end
-                    A_IN_DELAY:    in_delay_r  <= s_axi_wdata[DELAY_W-1:0];
                     A_IN_DIVIDER:  in_div_r    <= s_axi_wdata[DIV_W-1:0];
                     A_ST_CFG:      begin st_en_r <= s_axi_wdata[0]; st_inv_r <= s_axi_wdata[1];
                                          st_src_r <= s_axi_wdata[3:2]; end
                     A_ST_DELAY:    st_delay_r  <= s_axi_wdata[DELAY_W-1:0];
                     A_ST_DUR:      st_dur_r    <= s_axi_wdata[DELAY_W-1:0];
                     A_ST_MINON:    st_minon_r  <= s_axi_wdata[DELAY_W-1:0];
-                    A_OUT_CFG:     begin out_src_r <= s_axi_wdata[2:0]; out_inv_r <= s_axi_wdata[3]; out_uval_r <= s_axi_wdata[4]; end
+                    A_OUT_CFG:     begin out_src_r <= s_axi_wdata[2:0]; out_inv_r <= s_axi_wdata[3]; out_uval_r <= s_axi_wdata[4];
+                                         out_nlow_r <= s_axi_wdata[5]; end
                     A_SYNC_CFG:    begin sy_role_r <= s_axi_wdata[1:0]; sy_xvsdir_r <= s_axi_wdata[2]; sy_xhsdir_r <= s_axi_wdata[3];
                                          sy_xvspol_r <= s_axi_wdata[4]; sy_xhspol_r <= s_axi_wdata[5]; sy_roleby_r <= s_axi_wdata[6]; end
                     A_SYNC_TROUTE: sy_troute_r <= s_axi_wdata[1:0];
+                    A_TRIG_CFG:    trig_cfg_r  <= s_axi_wdata[2:0];
+                    A_TRIG_DELAY:  trig_dly_r  <= s_axi_wdata[30:0];
+                    A_TRIG_WIDTH:  trig_wid_r  <= s_axi_wdata[30:0];
+                    A_TRIG_MINPER: trig_mp_r   <= s_axi_wdata[30:0];
+                    A_IN_FILTER:   in_filt_r   <= s_axi_wdata[23:0];
                     A_PTP_CTRL:    begin ptp_ctrl_r <= s_axi_wdata[2:0];
                                          load_pulse_r <= s_axi_wdata[3]; commit_pulse_r <= s_axi_wdata[4]; end
                     A_PTP_TIME_LO: ptime_lo_r    <= s_axi_wdata;
@@ -266,17 +288,22 @@ module camio_sync_axil_regs #(
                     A_CONTROL:     rdata_r <= {31'd0, en_r};
                     A_STATUS:      rdata_r <= i_status;
                     A_IN_CFG:      rdata_r <= {27'd0, in_inv_r, in_act_r, in_func_r};
-                    A_IN_DELAY:    rdata_r <= {{(32-DELAY_W){1'b0}}, in_delay_r};
                     A_IN_DIVIDER:  rdata_r <= {{(32-DIV_W){1'b0}}, in_div_r};
                     A_IN_STATUS:   rdata_r <= i_in_status;
                     A_ST_CFG:      rdata_r <= {25'd0, 3'b000, st_src_r, st_inv_r, st_en_r};
                     A_ST_DELAY:    rdata_r <= {{(32-DELAY_W){1'b0}}, st_delay_r};
                     A_ST_DUR:      rdata_r <= {{(32-DELAY_W){1'b0}}, st_dur_r};
                     A_ST_MINON:    rdata_r <= {{(32-DELAY_W){1'b0}}, st_minon_r};
-                    A_OUT_CFG:     rdata_r <= {27'd0, out_uval_r, out_inv_r, out_src_r};
+                    A_OUT_CFG:     rdata_r <= {26'd0, out_nlow_r, out_uval_r, out_inv_r, out_src_r};
                     A_SYNC_CFG:    rdata_r <= {25'd0, sy_roleby_r, sy_xhspol_r, sy_xvspol_r, sy_xhsdir_r, sy_xvsdir_r, sy_role_r};
                     A_SYNC_TROUTE: rdata_r <= {30'd0, sy_troute_r};
                     A_SYNC_STATUS: rdata_r <= i_sync_status;
+                    A_TRIG_CFG:    rdata_r <= {29'd0, trig_cfg_r};
+                    A_TRIG_DELAY:  rdata_r <= {1'b0, trig_dly_r};
+                    A_TRIG_WIDTH:  rdata_r <= {1'b0, trig_wid_r};
+                    A_TRIG_MINPER: rdata_r <= {1'b0, trig_mp_r};
+                    A_IN_FILTER:   rdata_r <= {8'd0, in_filt_r};
+                    A_TRIG_COUNT:  rdata_r <= i_trig_count;
                     A_PTP_CTRL:    rdata_r <= {29'd0, ptp_ctrl_r};
                     A_PTP_TIME_LO: begin rdata_r <= i_time[31:0]; time_snap_hi <= i_time[63:32]; end
                     A_PTP_TIME_HI: rdata_r <= time_snap_hi;
@@ -321,11 +348,17 @@ module camio_sync_axil_regs #(
 
     assign o_enable            = en_r;
     assign o_soft_reset        = soft_reset_r;
+    assign o_sw_trig           = sw_trig_r;
     assign o_in_func           = in_func_r;
     assign o_in_activation     = in_act_r;
     assign o_in_invert         = in_inv_r;
-    assign o_in_delay          = in_delay_r;
+    assign o_in_filter         = in_filt_r;
     assign o_in_divider        = in_div_r;
+    assign o_trig_src          = trig_cfg_r[1:0];
+    assign o_width_mode        = trig_cfg_r[2];
+    assign o_trig_delay        = trig_dly_r;
+    assign o_trig_width        = trig_wid_r;
+    assign o_trig_minper       = trig_mp_r;
     assign o_strobe_en         = st_en_r;
     assign o_strobe_invert     = st_inv_r;
     assign o_strobe_src        = st_src_r;
@@ -335,6 +368,7 @@ module camio_sync_axil_regs #(
     assign o_out_src           = out_src_r;
     assign o_out_invert        = out_inv_r;
     assign o_out_user_value    = out_uval_r;
+    assign o_native_low        = out_nlow_r;
     assign o_sync_role         = sy_role_r;
     assign o_xvs_dir           = sy_xvsdir_r;
     assign o_xhs_dir           = sy_xhsdir_r;

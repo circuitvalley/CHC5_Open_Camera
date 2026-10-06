@@ -10,17 +10,20 @@
 #include <linux/io.h>
 #include <linux/jiffies.h>
 #include <linux/ktime.h>
+#include <linux/macb_zynq_ptp.h>
 #include <linux/marvell_phy_ptp.h>
 #include <linux/math64.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/netdevice.h>
 #include <linux/of.h>
+#include <linux/of_net.h>
 #include <linux/phy.h>
 #include <linux/platform_device.h>
 #include <linux/ptp_clock_kernel.h>
 #include <linux/rtnetlink.h>
 #include <linux/slab.h>
+#include <linux/workqueue.h>
 
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
@@ -42,6 +45,15 @@
 #define CHC5CAMIO_REG_SYNC_CFG		0x60
 #define CHC5CAMIO_REG_SYNC_TRIG_ROUTE	0x68
 #define CHC5CAMIO_REG_SYNC_STATUS	0x6C
+#define CHC5CAMIO_REG_TRIG_CFG		0x80
+#define CHC5CAMIO_REG_TRIG_DELAY	0x84
+#define CHC5CAMIO_REG_TRIG_WIDTH	0x88
+#define CHC5CAMIO_REG_TRIG_MINPER	0x8C
+#define CHC5CAMIO_REG_IN_FILTER		0x90
+#define CHC5CAMIO_REG_TRIG_COUNT	0x94
+#define CHC5CAMIO_REG_LINE_PERIOD	0x154
+#define CHC5CAMIO_REG_LINE_CFG		0x15C
+#define CHC5CAMIO_REG_FRAME_LINES	0x160
 #define CHC5CAMIO_REG_PTP_CTRL		0x100
 #define CHC5CAMIO_REG_PTP_TIME_LO	0x104
 #define CHC5CAMIO_REG_PTP_TIME_HI	0x108
@@ -52,14 +64,25 @@
 #define CHC5CAMIO_REG_EVT_PERIOD	0x120
 #define CHC5CAMIO_REG_EVT_CFG		0x124
 #define CHC5CAMIO_REG_EVT_COUNT		0x128
+#define CHC5CAMIO_REG_SCHED_NEXT_LO	0x130
+#define CHC5CAMIO_REG_SCHED_NEXT_HI	0x134
+#define CHC5CAMIO_REG_SCHED_PER_LO	0x138
+#define CHC5CAMIO_REG_SCHED_PER_HI	0x13C
+#define CHC5CAMIO_REG_SCHED_PER_FRAC	0x140
 
 #define CHC5CAMIO_MAGIC			0xCC5Au
 #define CHC5CAMIO_VER_PTP		0x0200u
+#define CHC5CAMIO_VER_TRIG		0x0300u
+#define CHC5CAMIO_VER_NATIVE		0x0301u
 
 #define CHC5CAMIO_PTP_TB_EN		BIT(0)
 #define CHC5CAMIO_PTP_EVT_EN		BIT(1)
+#define CHC5CAMIO_PTP_SCHED_EN		BIT(2)
 #define CHC5CAMIO_PTP_LOAD		BIT(3)
+#define CHC5CAMIO_PTP_COMMIT		BIT(4)
 
+#define CHC5CAMIO_PTPST_SCHED_MASK	0x3Cu
+#define CHC5CAMIO_PTPST_RUNNING		BIT(2)
 #define CHC5CAMIO_PTPST_EVT_REFUSED	BIT(6)
 
 #define CHC5CAMIO_EVT_CFG_EN		BIT(0)
@@ -67,6 +90,10 @@
 
 #define CHC5CAMIO_CTRL_ENABLE		BIT(0)
 #define CHC5CAMIO_CTRL_SOFT_RESET	BIT(1)
+#define CHC5CAMIO_CTRL_SW_TRIGGER	BIT(2)
+
+#define CHC5CAMIO_TRIG_SRC_MASK		0x3u
+#define CHC5CAMIO_TRIG_WIDTH_MODE	BIT(2)
 
 #define CHC5CAMIO_INCFG_FUNC_SHIFT	0
 #define CHC5CAMIO_INCFG_FUNC_MASK	0x3u
@@ -83,6 +110,7 @@
 #define CHC5CAMIO_OUTCFG_SRC_MASK	0x7u
 #define CHC5CAMIO_OUTCFG_INVERT		BIT(3)
 #define CHC5CAMIO_OUTCFG_USER_VALUE	BIT(4)
+#define CHC5CAMIO_OUTCFG_NATIVE_LOW	BIT(5)
 
 #define CHC5CAMIO_SYNC_ROLE_SHIFT	0
 #define CHC5CAMIO_SYNC_ROLE_MASK	0x3u
@@ -94,7 +122,11 @@
 
 #define CHC5CAMIO_TIME16_MASK		0xFFFFu
 #define CHC5CAMIO_DIVIDER_MASK		0xFFu
-#define CHC5CAMIO_STATUS_MASK		0xFFu
+#define CHC5CAMIO_STATUS_MASK		0x7FFu
+#define CHC5CAMIO_NS31_MASK		0x7FFFFFFFu
+#define CHC5CAMIO_NS24_MASK		0xFFFFFFu
+#define CHC5CAMIO_SCHED_PS_MIN		1000000LL
+#define CHC5CAMIO_SCHED_PS_MAX		((1LL << 48) * 1000)
 #define CHC5CAMIO_INSTATUS_MASK		0xFFFFFFu
 #define CHC5CAMIO_SYNCSTATUS_MASK	0xFFFFu
 
@@ -107,8 +139,14 @@ enum chc5camio_servo_state {
 	CHC5CAMIO_SERVO_PI,
 };
 
+enum chc5camio_servo_ref {
+	CHC5CAMIO_REF_PIN13,
+	CHC5CAMIO_REF_GEM,
+};
+
 struct chc5camio_servo {
 	enum chc5camio_servo_state state;
+	enum chc5camio_servo_ref ref;
 	enum chc5camio_servo_state after_arm;
 	u64	t0_ns;
 	u32	period_ns;
@@ -118,6 +156,7 @@ struct chc5camio_servo {
 	s64	freq_err_ns;
 	bool	freq_have;
 	bool	locked;
+	bool	ptp_on;
 	u32	good;
 	u32	quiet;
 	u32	samples, missed, rejected, steps, arms, refused, errors;
@@ -139,6 +178,7 @@ struct chc5camio_device {
 	u32			out_cfg;
 	u32			sync_cfg;
 	u32			sync_trig_route;
+	u32			trig_cfg;
 
 	struct mutex		lock;
 	u32			version;
@@ -147,7 +187,15 @@ struct chc5camio_device {
 	struct ptp_clock	*ptp_clock;
 	struct mutex		ptp_lock;
 	u32			ptp_ctrl;
+	u64			sched_period_ps;
+	u64			sched_start_ns;
+	bool			sched_on;
+	bool			sched_pending;
+	struct delayed_work	sched_work;
+	u32			line_period;
 	unsigned long		clk_hz;
+	struct device_node	*eth_np;
+	struct net_device	*ndev;
 	struct phy_device	*phydev;
 	struct chc5camio_servo	servo;
 };
@@ -165,6 +213,11 @@ static inline void chc5camio_write(struct chc5camio_device *c, u32 reg, u32 val)
 static inline u32 chc5camio_read(struct chc5camio_device *c, u32 reg)
 {
 	return ioread32(c->iomem + reg);
+}
+
+static inline bool chc5camio_has(const struct chc5camio_device *c, u32 ver)
+{
+	return (c->version >> 16) == CHC5CAMIO_MAGIC && (c->version & 0xFFFFu) >= ver;
 }
 
 static inline u32 chc5camio_field(u32 reg, u32 mask, u32 shift, u32 val)
@@ -185,10 +238,19 @@ static void chc5camio_reset(struct chc5camio_device *c)
 	c->out_cfg = 0;
 	c->sync_cfg = 0;
 	c->sync_trig_route = 0;
+	c->trig_cfg = 0;
 
 	chc5camio_write(c, CHC5CAMIO_REG_CONTROL, 0);
 	chc5camio_write(c, CHC5CAMIO_REG_IN_CFG, 0);
-	chc5camio_write(c, CHC5CAMIO_REG_IN_DELAY, 0);
+	if (chc5camio_has(c, CHC5CAMIO_VER_TRIG)) {
+		chc5camio_write(c, CHC5CAMIO_REG_TRIG_CFG, 0);
+		chc5camio_write(c, CHC5CAMIO_REG_TRIG_DELAY, 0);
+		chc5camio_write(c, CHC5CAMIO_REG_TRIG_WIDTH, 0);
+		chc5camio_write(c, CHC5CAMIO_REG_TRIG_MINPER, 0);
+		chc5camio_write(c, CHC5CAMIO_REG_IN_FILTER, 0);
+	} else {
+		chc5camio_write(c, CHC5CAMIO_REG_IN_DELAY, 0);
+	}
 	chc5camio_write(c, CHC5CAMIO_REG_IN_DIVIDER, 0);
 	chc5camio_write(c, CHC5CAMIO_REG_STROBE_CFG, 0);
 	chc5camio_write(c, CHC5CAMIO_REG_STROBE_DELAY, 0);
@@ -198,6 +260,12 @@ static void chc5camio_reset(struct chc5camio_device *c)
 	chc5camio_write(c, CHC5CAMIO_REG_SYNC_CFG, 0);
 	chc5camio_write(c, CHC5CAMIO_REG_SYNC_TRIG_ROUTE, 0);
 }
+
+static int chc5camio_sched_apply(struct chc5camio_device *c);
+static void chc5camio_sched_resync(struct chc5camio_device *c);
+static bool chc5camio_servo_owns(struct chc5camio_device *c);
+static bool chc5camio_on_ptp_time(struct chc5camio_device *c);
+static bool chc5camio_ptp_pulses(struct chc5camio_device *c);
 
 static int chc5camio_s_ctrl(struct v4l2_ctrl *ctrl)
 {
@@ -234,8 +302,71 @@ static int chc5camio_s_ctrl(struct v4l2_ctrl *ctrl)
 		c->in_cfg = chc5camio_bit(c->in_cfg, CHC5CAMIO_INCFG_INVERT, on);
 		chc5camio_write(c, CHC5CAMIO_REG_IN_CFG, c->in_cfg);
 		break;
-	case CHC5CAMIO_CID_IN_DELAY:
-		chc5camio_write(c, CHC5CAMIO_REG_IN_DELAY, v & CHC5CAMIO_TIME16_MASK);
+	case CHC5CAMIO_CID_TRIG_DELAY_NS:
+		if (chc5camio_has(c, CHC5CAMIO_VER_TRIG)) {
+			chc5camio_write(c, CHC5CAMIO_REG_TRIG_DELAY, v & CHC5CAMIO_NS31_MASK);
+		} else {
+			u32 u = (v + 5000u) / 10000u;
+
+			chc5camio_write(c, CHC5CAMIO_REG_IN_DELAY,
+					min_t(u32, u, CHC5CAMIO_TIME16_MASK));
+		}
+		break;
+	case CHC5CAMIO_CID_TRIG_SOURCE:
+		c->trig_cfg = chc5camio_field(c->trig_cfg, CHC5CAMIO_TRIG_SRC_MASK, 0, v);
+		chc5camio_write(c, CHC5CAMIO_REG_TRIG_CFG, c->trig_cfg);
+		break;
+	case CHC5CAMIO_CID_TRIG_WIDTH_MODE:
+		c->trig_cfg = chc5camio_bit(c->trig_cfg, CHC5CAMIO_TRIG_WIDTH_MODE, on);
+		chc5camio_write(c, CHC5CAMIO_REG_TRIG_CFG, c->trig_cfg);
+		break;
+	case CHC5CAMIO_CID_TRIG_SOFTWARE:
+		chc5camio_write(c, CHC5CAMIO_REG_CONTROL,
+				c->control | CHC5CAMIO_CTRL_SW_TRIGGER);
+		break;
+	case CHC5CAMIO_CID_TRIG_WIDTH_NS:
+		chc5camio_write(c, CHC5CAMIO_REG_TRIG_WIDTH, v & CHC5CAMIO_NS31_MASK);
+		break;
+	case CHC5CAMIO_CID_TRIG_MINPER_NS:
+		chc5camio_write(c, CHC5CAMIO_REG_TRIG_MINPER, v & CHC5CAMIO_NS31_MASK);
+		break;
+	case CHC5CAMIO_CID_IN_FILTER_NS:
+		chc5camio_write(c, CHC5CAMIO_REG_IN_FILTER, v & CHC5CAMIO_NS24_MASK);
+		break;
+	case CHC5CAMIO_CID_LINE_PERIOD_NS:
+		c->line_period = v & CHC5CAMIO_NS24_MASK;
+		chc5camio_write(c, CHC5CAMIO_REG_LINE_PERIOD, c->line_period);
+		break;
+	case CHC5CAMIO_CID_SCHED_PERIOD_PS:
+		mutex_lock(&c->ptp_lock);
+		c->sched_period_ps = *ctrl->p_new.p_s64;
+		mutex_unlock(&c->ptp_lock);
+		if (c->sched_on)
+			ret = chc5camio_sched_apply(c);
+		break;
+	case CHC5CAMIO_CID_SCHED_START_NS:
+		mutex_lock(&c->ptp_lock);
+		c->sched_start_ns = *ctrl->p_new.p_s64;
+		mutex_unlock(&c->ptp_lock);
+		if (c->sched_on)
+			ret = chc5camio_sched_apply(c);
+		break;
+	case CHC5CAMIO_CID_SCHED_ENABLE:
+		mutex_lock(&c->ptp_lock);
+		c->sched_on = on;
+		mutex_unlock(&c->ptp_lock);
+		ret = chc5camio_sched_apply(c);
+		if (ret) {
+			mutex_lock(&c->ptp_lock);
+			c->sched_on = !on;
+			mutex_unlock(&c->ptp_lock);
+		}
+		break;
+	case CHC5CAMIO_CID_FRAME_LINES:
+		chc5camio_write(c, CHC5CAMIO_REG_FRAME_LINES, v & CHC5CAMIO_NS24_MASK);
+		break;
+	case CHC5CAMIO_CID_LINE_XHS:
+		chc5camio_write(c, CHC5CAMIO_REG_LINE_CFG, on ? 1u : 0u);
 		break;
 	case CHC5CAMIO_CID_IN_DIVIDER:
 		chc5camio_write(c, CHC5CAMIO_REG_IN_DIVIDER, v & CHC5CAMIO_DIVIDER_MASK);
@@ -275,6 +406,10 @@ static int chc5camio_s_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case CHC5CAMIO_CID_OUT_USER_VALUE:
 		c->out_cfg = chc5camio_bit(c->out_cfg, CHC5CAMIO_OUTCFG_USER_VALUE, on);
+		chc5camio_write(c, CHC5CAMIO_REG_OUT_CFG, c->out_cfg);
+		break;
+	case CHC5CAMIO_CID_NATIVE_LOW:
+		c->out_cfg = chc5camio_bit(c->out_cfg, CHC5CAMIO_OUTCFG_NATIVE_LOW, on);
 		chc5camio_write(c, CHC5CAMIO_REG_OUT_CFG, c->out_cfg);
 		break;
 
@@ -330,6 +465,17 @@ static int chc5camio_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 		ctrl->val = chc5camio_read(c, CHC5CAMIO_REG_SYNC_STATUS) &
 			    CHC5CAMIO_SYNCSTATUS_MASK;
 		break;
+	case CHC5CAMIO_CID_TRIG_COUNT:
+		*ctrl->p_new.p_s64 = chc5camio_read(c, CHC5CAMIO_REG_TRIG_COUNT);
+		break;
+	case CHC5CAMIO_CID_SCHED_STATUS:
+		mutex_lock(&c->ptp_lock);
+		ctrl->val = (chc5camio_read(c, CHC5CAMIO_REG_PTP_STATUS) &
+			     CHC5CAMIO_PTPST_SCHED_MASK) |
+			    (chc5camio_on_ptp_time(c) ? CHC5CAMIO_SCHED_ST_LOCKED : 0) |
+			    (chc5camio_servo_owns(c) ? CHC5CAMIO_SCHED_ST_SERVO : 0);
+		mutex_unlock(&c->ptp_lock);
+		break;
 	default:
 		ret = -EINVAL;
 		break;
@@ -354,6 +500,7 @@ struct chc5camio_ctrl_desc {
 	s64		def;
 	u32		flags;
 	const char * const *qmenu;
+	u32		min_ver;
 };
 
 #define CHC5CAMIO_RO_FLAGS \
@@ -368,6 +515,7 @@ static const char * const chc5_menu_out_source[]    = { "Off", "User value", "St
 							"PTP pulse" };
 static const char * const chc5_menu_sync_role[]     = { "Off", "Master", "Slave", "PTP" };
 static const char * const chc5_menu_trig_route[]    = { "XTRIG", "XVS", "I2C" };
+static const char * const chc5_menu_trig_source[]   = { "Aux In", "Software", "PTP schedule" };
 
 static const struct chc5camio_ctrl_desc chc5camio_ctrl_table[] = {
 	{ CHC5CAMIO_CID_ENABLE,          "Aux IO Enable",        V4L2_CTRL_TYPE_BOOLEAN, 0, 1, 1, 0, 0 },
@@ -376,7 +524,7 @@ static const struct chc5camio_ctrl_desc chc5camio_ctrl_table[] = {
 	{ CHC5CAMIO_CID_IN_FUNCTION,     "Aux In Function",      V4L2_CTRL_TYPE_MENU,    0, 2, 0, 0, 0, chc5_menu_in_function },
 	{ CHC5CAMIO_CID_IN_ACTIVATION,   "Aux In Activation",    V4L2_CTRL_TYPE_MENU,    0, 3, 0, 0, 0, chc5_menu_in_activation },
 	{ CHC5CAMIO_CID_IN_INVERT,       "Aux In Invert",        V4L2_CTRL_TYPE_BOOLEAN, 0, 1,   1, 0, 0 },
-	{ CHC5CAMIO_CID_IN_DELAY,        "Trigger Delay",        V4L2_CTRL_TYPE_INTEGER, 0, 0xFFFF, 1, 0, 0 },
+	{ CHC5CAMIO_CID_TRIG_DELAY_NS,   "Trigger Delay ns",     V4L2_CTRL_TYPE_INTEGER, 0, 0x7FFFFFFF, 1, 0, 0 },
 	{ CHC5CAMIO_CID_IN_DIVIDER,      "Trigger Divider",      V4L2_CTRL_TYPE_INTEGER, 0, 0xFF,   1, 0, 0 },
 
 	{ CHC5CAMIO_CID_STROBE_ENABLE,   "Strobe Enable",        V4L2_CTRL_TYPE_BOOLEAN, 0, 1, 1, 0, 0 },
@@ -389,6 +537,7 @@ static const struct chc5camio_ctrl_desc chc5camio_ctrl_table[] = {
 	{ CHC5CAMIO_CID_OUT_SOURCE,      "Aux Out Source",       V4L2_CTRL_TYPE_MENU,    0, 7, 0, 0, 0, chc5_menu_out_source },
 	{ CHC5CAMIO_CID_OUT_INVERT,      "Aux Out Invert",       V4L2_CTRL_TYPE_BOOLEAN, 0, 1, 1, 0, 0 },
 	{ CHC5CAMIO_CID_OUT_USER_VALUE,  "Aux Out User Value",   V4L2_CTRL_TYPE_BOOLEAN, 0, 1, 1, 0, 0 },
+	{ CHC5CAMIO_CID_NATIVE_LOW,      "Native Active Low",    V4L2_CTRL_TYPE_BOOLEAN, 0, 1, 1, 0, 0, NULL, CHC5CAMIO_VER_NATIVE },
 
 	{ CHC5CAMIO_CID_SYNC_ROLE,       "Sync Role",            V4L2_CTRL_TYPE_MENU,    0, 3, 0, 0, 0, chc5_menu_sync_role },
 	{ CHC5CAMIO_CID_SYNC_XVS_POL,    "Sync XVS Pol",         V4L2_CTRL_TYPE_BOOLEAN, 0, 1, 1, 0, 0 },
@@ -399,6 +548,21 @@ static const struct chc5camio_ctrl_desc chc5camio_ctrl_table[] = {
 	{ CHC5CAMIO_CID_STATUS,          "Aux IO Status",        V4L2_CTRL_TYPE_INTEGER, 0, CHC5CAMIO_STATUS_MASK,    1, 0, CHC5CAMIO_RO_FLAGS },
 	{ CHC5CAMIO_CID_IN_STATUS,       "Aux In Status",        V4L2_CTRL_TYPE_INTEGER, 0, CHC5CAMIO_INSTATUS_MASK,  1, 0, CHC5CAMIO_RO_FLAGS },
 	{ CHC5CAMIO_CID_SYNC_STATUS,     "Sync Status",          V4L2_CTRL_TYPE_INTEGER, 0, CHC5CAMIO_SYNCSTATUS_MASK, 1, 0, CHC5CAMIO_RO_FLAGS },
+
+	{ CHC5CAMIO_CID_TRIG_SOURCE,     "Trigger Source",       V4L2_CTRL_TYPE_MENU,    0, 2, 0, 0, 0, chc5_menu_trig_source, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_TRIG_SOFTWARE,   "Trigger Software",     V4L2_CTRL_TYPE_BUTTON,  0, 0, 0, 0, 0, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_TRIG_WIDTH_MODE, "Trigger Width Mode",   V4L2_CTRL_TYPE_BOOLEAN, 0, 1, 1, 0, 0, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_TRIG_WIDTH_NS,   "Trigger Width ns",     V4L2_CTRL_TYPE_INTEGER, 0, 0x7FFFFFFF, 1, 1000000, 0, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_TRIG_MINPER_NS,  "Trigger Min Period ns", V4L2_CTRL_TYPE_INTEGER, 0, 0x7FFFFFFF, 1, 0, 0, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_IN_FILTER_NS,    "Aux In Filter ns",     V4L2_CTRL_TYPE_INTEGER, 0, CHC5CAMIO_NS24_MASK, 1, 0, 0, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_TRIG_COUNT,      "Trigger Count",        V4L2_CTRL_TYPE_INTEGER64, 0, 0xFFFFFFFFLL, 1, 0, CHC5CAMIO_RO_FLAGS, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_LINE_PERIOD_NS,  "Line Period ns",       V4L2_CTRL_TYPE_INTEGER, 0, CHC5CAMIO_NS24_MASK, 1, 0, 0, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_FRAME_LINES,     "Frame Lines",          V4L2_CTRL_TYPE_INTEGER, 0, CHC5CAMIO_NS24_MASK, 1, 0, 0, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_LINE_XHS,        "Line XHS Enable",      V4L2_CTRL_TYPE_BOOLEAN, 0, 1, 1, 0, 0, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_SCHED_PERIOD_PS, "Sched Period ps",      V4L2_CTRL_TYPE_INTEGER64, CHC5CAMIO_SCHED_PS_MIN, CHC5CAMIO_SCHED_PS_MAX, 1, 33333333333LL, 0, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_SCHED_START_NS,  "Sched Start ns",       V4L2_CTRL_TYPE_INTEGER64, 0, S64_MAX, 1, 0, 0, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_SCHED_ENABLE,    "Sched Enable",         V4L2_CTRL_TYPE_BOOLEAN, 0, 1, 1, 0, 0, NULL, CHC5CAMIO_VER_TRIG },
+	{ CHC5CAMIO_CID_SCHED_STATUS,    "Sched Status",         V4L2_CTRL_TYPE_INTEGER, 0, 0x3FF, 1, 0, CHC5CAMIO_RO_FLAGS, NULL, CHC5CAMIO_VER_TRIG },
 };
 
 static int chc5camio_init_controls(struct chc5camio_device *c)
@@ -426,13 +590,15 @@ static int chc5camio_init_controls(struct chc5camio_device *c)
 			.qmenu = d->qmenu,
 		};
 
-		if ((c->version >> 16) != CHC5CAMIO_MAGIC ||
-		    (c->version & 0xFFFFu) < CHC5CAMIO_VER_PTP) {
-			if (d->id == CHC5CAMIO_CID_SYNC_ROLE)
-				cfg.max = 2;
-			else if (d->id == CHC5CAMIO_CID_OUT_SOURCE)
-				cfg.max = 6;
-		}
+		if (d->min_ver && !chc5camio_has(c, d->min_ver))
+			continue;
+		if (d->id == CHC5CAMIO_CID_SYNC_ROLE &&
+		    !chc5camio_has(c, CHC5CAMIO_VER_PTP))
+			cfg.max = 2;
+		else if (d->id == CHC5CAMIO_CID_OUT_SOURCE && !chc5camio_ptp_pulses(c))
+			cfg.max = 6;
+		if (d->id == CHC5CAMIO_CID_SYNC_TRIG_ROUTE && chc5camio_has(c, CHC5CAMIO_VER_TRIG))
+			cfg.max = 1;
 
 		v4l2_ctrl_new_custom(hdl, &cfg, NULL);
 	}
@@ -453,25 +619,33 @@ static int chc5camio_init_controls(struct chc5camio_device *c)
 #define CHC5CAMIO_SERVO_STEP_NS		NSEC_PER_MSEC
 #define CHC5CAMIO_SERVO_LOCK_NS		500
 #define CHC5CAMIO_SERVO_LOCK_N		4
+#define CHC5CAMIO_SERVO_UNLOCK_NS	2000
 #define CHC5CAMIO_SERVO_QUIET_N		3
 #define CHC5CAMIO_SERVO_REARM_N		5
 #define CHC5CAMIO_SERVO_KP_MILLI	700
 #define CHC5CAMIO_SERVO_KI_MILLI	300
 #define CHC5CAMIO_MAX_ADJ_PPB		500000
 #define CHC5CAMIO_FIND_DELAY		(2 * HZ)
+#define CHC5CAMIO_FOLLOW_MS		125
 
 static bool ptp_servo = true;
 module_param(ptp_servo, bool, 0444);
 MODULE_PARM_DESC(ptp_servo,
-		 "lock the PTP time base to the Ethernet PHY clock");
-
-static char *ptp_ifname = "eth0";
-module_param(ptp_ifname, charp, 0444);
-MODULE_PARM_DESC(ptp_ifname, "interface whose PHY the time base locks to");
+		 "lock the PTP time base to the device tree's Ethernet port (the PHY event pin where wired, else the GEM clock)");
 
 static unsigned int ptp_evt_ms = 1000;
 module_param(ptp_evt_ms, uint, 0444);
 MODULE_PARM_DESC(ptp_evt_ms, "PTP event pulse period in ms (100-1000)");
+
+static bool chc5camio_ptp_pulses(struct chc5camio_device *c)
+{
+	struct device_node *np = c->dev->of_node;
+
+	return chc5camio_has(c, CHC5CAMIO_VER_PTP) &&
+	       IS_ENABLED(CONFIG_PTP_1588_CLOCK) && ptp_servo &&
+	       of_property_read_bool(np, "circuitvalley,ptp-event-pin") &&
+	       of_property_present(np, "circuitvalley,ptp-ethernet");
+}
 
 static const char * const chc5camio_servo_names[] = {
 	[CHC5CAMIO_SERVO_OFF]	= "off",
@@ -519,6 +693,7 @@ static void chc5camio_ptp_shift(struct chc5camio_device *c, s64 delta)
 	k1 = ktime_get_raw_fast_ns();
 	chc5camio_ptp_load(c, t + delta + (k1 - k0));
 	local_irq_restore(flags);
+	chc5camio_sched_resync(c);
 }
 
 static void chc5camio_ptp_set_ppb(struct chc5camio_device *c, s64 ppb)
@@ -534,6 +709,102 @@ static void chc5camio_ptp_set_ppb(struct chc5camio_device *c, s64 ppb)
 static bool chc5camio_servo_owns(struct chc5camio_device *c)
 {
 	return c->servo.state != CHC5CAMIO_SERVO_OFF;
+}
+
+static bool chc5camio_on_ptp_time(struct chc5camio_device *c)
+{
+	if (!c->servo.locked)
+		return false;
+	if (c->servo.ref == CHC5CAMIO_REF_GEM)
+		return c->ndev && macb_zynq_ptp_following(c->ndev);
+	return c->servo.ptp_on;
+}
+
+#define CHC5CAMIO_SCHED_LEAD_NS		(5 * NSEC_PER_MSEC)
+
+static void chc5camio_sched_program(struct chc5camio_device *c, bool resync)
+{
+	u64 p_ps = c->sched_period_ps, start = c->sched_start_ns;
+	u64 t;
+	u32 st, rem_ps;
+	u64 p_ns, frac;
+
+	st = chc5camio_read(c, CHC5CAMIO_REG_PTP_STATUS);
+	if (!(c->ptp_ctrl & CHC5CAMIO_PTP_SCHED_EN) &&
+	    (st & CHC5CAMIO_PTPST_RUNNING)) {
+		c->sched_pending = true;
+		mod_delayed_work(system_wq, &c->sched_work, 1);
+		return;
+	}
+	c->sched_pending = false;
+
+	t = chc5camio_ptp_read(c, NULL) + CHC5CAMIO_SCHED_LEAD_NS;
+	p_ns = div_u64_rem(p_ps, 1000, &rem_ps);
+	frac = div_u64((u64)rem_ps << 32, 1000);
+	if (st & CHC5CAMIO_PTPST_RUNNING) {
+		u32 hi = chc5camio_read(c, CHC5CAMIO_REG_SCHED_PER_HI);
+
+		t += (u64)hi << 32 | chc5camio_read(c, CHC5CAMIO_REG_SCHED_PER_LO);
+	}
+	if (!start)
+		start = mul_u64_u64_div_u64(mul_u64_u64_div_u64(1000, t, p_ps) + 1,
+					    p_ps, 1000);
+	else if (resync && start < t)
+		start += mul_u64_u64_div_u64(mul_u64_u64_div_u64(1000, t - start, p_ps) + 1,
+					     p_ps, 1000);
+
+	chc5camio_write(c, CHC5CAMIO_REG_SCHED_NEXT_LO, lower_32_bits(start));
+	chc5camio_write(c, CHC5CAMIO_REG_SCHED_NEXT_HI, upper_32_bits(start));
+	chc5camio_write(c, CHC5CAMIO_REG_SCHED_PER_LO, lower_32_bits(p_ns));
+	chc5camio_write(c, CHC5CAMIO_REG_SCHED_PER_HI, upper_32_bits(p_ns));
+	chc5camio_write(c, CHC5CAMIO_REG_SCHED_PER_FRAC, lower_32_bits(frac));
+	c->ptp_ctrl |= CHC5CAMIO_PTP_SCHED_EN;
+	chc5camio_write(c, CHC5CAMIO_REG_PTP_CTRL, c->ptp_ctrl | CHC5CAMIO_PTP_COMMIT);
+
+	dev_dbg(c->dev, "schedule: start %llu ns, period %llu ps%s\n", start, p_ps,
+		resync ? " (re-anchored on its grid)" : "");
+}
+
+static void chc5camio_sched_work(struct work_struct *w)
+{
+	struct chc5camio_device *c = container_of(to_delayed_work(w),
+						  struct chc5camio_device,
+						  sched_work);
+
+	mutex_lock(&c->ptp_lock);
+	if (c->sched_pending && c->sched_on) {
+		if (chc5camio_read(c, CHC5CAMIO_REG_PTP_STATUS) &
+		    CHC5CAMIO_PTPST_RUNNING)
+			mod_delayed_work(system_wq, &c->sched_work, 1);
+		else
+			chc5camio_sched_program(c, true);
+	}
+	mutex_unlock(&c->ptp_lock);
+}
+
+static void chc5camio_sched_resync(struct chc5camio_device *c)
+{
+	if (c->sched_on && c->line_period && c->sched_period_ps)
+		chc5camio_sched_program(c, true);
+}
+
+static int chc5camio_sched_apply(struct chc5camio_device *c)
+{
+	if (c->sched_on && !c->line_period) {
+		dev_warn(c->dev, "schedule needs Line Period ns first\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&c->ptp_lock);
+	if (!c->sched_on) {
+		c->sched_pending = false;
+		c->ptp_ctrl &= ~CHC5CAMIO_PTP_SCHED_EN;
+		chc5camio_write(c, CHC5CAMIO_REG_PTP_CTRL, c->ptp_ctrl);
+	} else {
+		chc5camio_sched_program(c, false);
+	}
+	mutex_unlock(&c->ptp_lock);
+	return 0;
 }
 
 static int chc5camio_ptp_gettimex64(struct ptp_clock_info *ptp,
@@ -560,8 +831,10 @@ static int chc5camio_ptp_settime64(struct ptp_clock_info *ptp,
 	mutex_lock(&c->ptp_lock);
 	if (chc5camio_servo_owns(c))
 		ret = -EBUSY;
-	else
+	else {
 		chc5camio_ptp_load(c, timespec64_to_ns(ts));
+		chc5camio_sched_resync(c);
+	}
 	mutex_unlock(&c->ptp_lock);
 
 	return ret;
@@ -597,20 +870,25 @@ static int chc5camio_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 	return ret;
 }
 
-static struct phy_device *chc5camio_ptp_find_phy(void)
+static bool chc5camio_ptp_find_port(struct chc5camio_device *c)
+{
+	if (!c->ndev)
+		c->ndev = of_find_net_device_by_node(c->eth_np);
+	return c->ndev;
+}
+
+static struct phy_device *chc5camio_ptp_find_phy(struct chc5camio_device *c)
 {
 	struct phy_device *phydev = NULL;
-#if IS_ENABLED(CONFIG_NET)
-	struct net_device *ndev;
 
+	if (!chc5camio_ptp_find_port(c))
+		return NULL;
 	rtnl_lock();
-	ndev = __dev_get_by_name(&init_net, ptp_ifname);
-	if (ndev && ndev->phydev) {
-		phydev = ndev->phydev;
+	if (c->ndev->phydev) {
+		phydev = c->ndev->phydev;
 		get_device(&phydev->mdio.dev);
 	}
 	rtnl_unlock();
-#endif
 	return phydev;
 }
 
@@ -682,7 +960,8 @@ static void chc5camio_servo_step(struct chc5camio_device *c, s64 err)
 	s->locked = false;
 	s->freq_have = false;
 	s->after_arm = CHC5CAMIO_SERVO_FREQ;
-	s->state = CHC5CAMIO_SERVO_ARM;
+	s->state = s->ref == CHC5CAMIO_REF_GEM ? CHC5CAMIO_SERVO_FREQ
+					       : CHC5CAMIO_SERVO_ARM;
 }
 
 static void chc5camio_servo_sample(struct chc5camio_device *c, s64 err, u64 t_ns)
@@ -725,7 +1004,7 @@ static void chc5camio_servo_sample(struct chc5camio_device *c, s64 err, u64 t_ns
 	if (abs(err) < CHC5CAMIO_SERVO_LOCK_NS) {
 		if (s->good < CHC5CAMIO_SERVO_LOCK_N)
 			s->good++;
-	} else {
+	} else if (!s->locked || abs(err) > CHC5CAMIO_SERVO_UNLOCK_NS) {
 		s->good = 0;
 	}
 	s->locked = s->good >= CHC5CAMIO_SERVO_LOCK_N;
@@ -737,29 +1016,33 @@ static long chc5camio_servo_run(struct chc5camio_device *c)
 	u32 n1, n2, st;
 	u64 phy_ns, t;
 	long delay;
+	bool ptp_on;
 	u8 cnt;
 	int ret;
 
+	ptp_on = c->phydev && marvell_phy_ptp_timestamping(c->phydev);
+
 	mutex_lock(&c->ptp_lock);
+	s->ptp_on = ptp_on;
 
 	if (s->state == CHC5CAMIO_SERVO_FIND) {
 		mutex_unlock(&c->ptp_lock);
 		if (!c->phydev)
-			c->phydev = chc5camio_ptp_find_phy();
+			c->phydev = chc5camio_ptp_find_phy(c);
 		ret = c->phydev ? marvell_phy_ptp_event_enable(c->phydev, true)
 				: -ENODEV;
 		mutex_lock(&c->ptp_lock);
 		if (ret) {
 			if (ret != s->last_ret)
 				dev_warn(c->dev, "PTP servo: no event input on the %s PHY (%d), retrying\n",
-					 ptp_ifname, ret);
+					 c->ndev ? netdev_name(c->ndev) : "ptp-ethernet", ret);
 			s->last_ret = ret;
 			chc5camio_servo_drop_phy(c);
 			mutex_unlock(&c->ptp_lock);
 			return CHC5CAMIO_FIND_DELAY;
 		}
-		dev_info(c->dev, "PTP servo: locking to the %s PHY clock\n",
-			 ptp_ifname);
+		dev_info(c->dev, "PTP servo: locking to the %s PHY clock through the PHY event pin\n",
+			 netdev_name(c->ndev));
 		s->last_ret = 0;
 		s->state = CHC5CAMIO_SERVO_ARM;
 		s->after_arm = CHC5CAMIO_SERVO_STEP;
@@ -824,12 +1107,80 @@ static long chc5camio_servo_run(struct chc5camio_device *c)
 	return delay;
 }
 
+static int chc5camio_follow_read(struct chc5camio_device *c, s64 *err, u64 *t_ns)
+{
+	unsigned long flags;
+	u64 f0, f1, gem;
+	int ret;
+
+	local_irq_save(flags);
+	f0 = chc5camio_ptp_read(c, NULL);
+	ret = macb_zynq_ptp_now_ns(c->ndev, &gem);
+	f1 = chc5camio_ptp_read(c, NULL);
+	local_irq_restore(flags);
+	if (ret)
+		return ret;
+
+	*t_ns = f0 + (f1 - f0) / 2;
+	*err = (s64)(gem - *t_ns);
+	return 0;
+}
+
+static long chc5camio_follow_run(struct chc5camio_device *c)
+{
+	struct chc5camio_servo *s = &c->servo;
+	s64 err;
+	u64 t;
+	int ret;
+
+	mutex_lock(&c->ptp_lock);
+	if (s->state == CHC5CAMIO_SERVO_FIND) {
+		if (!chc5camio_ptp_find_port(c)) {
+			if (!s->last_ret)
+				dev_warn(c->dev, "PTP servo: ptp-ethernet port not registered yet, retrying\n");
+			s->last_ret = -ENODEV;
+			mutex_unlock(&c->ptp_lock);
+			return CHC5CAMIO_FIND_DELAY;
+		}
+		dev_info(c->dev, "PTP servo: following the %s GEM clock (no PHY event pin)\n",
+			 netdev_name(c->ndev));
+		s->last_ret = 0;
+		s->state = CHC5CAMIO_SERVO_STEP;
+	}
+
+	ret = chc5camio_follow_read(c, &err, &t);
+	if (ret) {
+		s->missed++;
+		if (++s->quiet >= CHC5CAMIO_SERVO_QUIET_N) {
+			s->locked = false;
+			s->good = 0;
+		}
+		if (ret != s->last_ret)
+			dev_info(c->dev, "PTP servo: %s GEM clock not running (%d), holding over\n",
+				 netdev_name(c->ndev), ret);
+		s->last_ret = ret;
+		mutex_unlock(&c->ptp_lock);
+		return CHC5CAMIO_FIND_DELAY;
+	}
+	if (s->last_ret) {
+		dev_info(c->dev, "PTP servo: %s GEM clock back\n", netdev_name(c->ndev));
+		s->last_ret = 0;
+	}
+	s->quiet = 0;
+	chc5camio_servo_sample(c, err, t);
+	mutex_unlock(&c->ptp_lock);
+
+	return msecs_to_jiffies(CHC5CAMIO_FOLLOW_MS);
+}
+
 static long chc5camio_ptp_aux_work(struct ptp_clock_info *ptp)
 {
 	struct chc5camio_device *c = ptp_to_chc5camio(ptp);
 
 	if (c->servo.state == CHC5CAMIO_SERVO_OFF)
 		return -1;
+	if (c->servo.ref == CHC5CAMIO_REF_GEM)
+		return chc5camio_follow_run(c);
 
 	return chc5camio_servo_run(c);
 }
@@ -871,16 +1222,23 @@ static int chc5camio_ptp_init(struct chc5camio_device *c)
 	if (!c->ptp_clock)
 		return 0;
 
-	s->period_ns = clamp(ptp_evt_ms, 100U, 1000U) * NSEC_PER_MSEC;
-	if (ptp_servo && of_property_read_bool(c->dev->of_node,
-					       "circuitvalley,ptp-event-pin")) {
+	if (of_property_read_bool(c->dev->of_node, "circuitvalley,ptp-event-pin")) {
+		s->ref = CHC5CAMIO_REF_PIN13;
+		s->period_ns = clamp(ptp_evt_ms, 100U, 1000U) * NSEC_PER_MSEC;
+	} else {
+		s->ref = CHC5CAMIO_REF_GEM;
+		s->period_ns = CHC5CAMIO_FOLLOW_MS * NSEC_PER_MSEC;
+	}
+	c->eth_np = of_parse_phandle(c->dev->of_node, "circuitvalley,ptp-ethernet", 0);
+	if (ptp_servo && c->eth_np) {
 		s->state = CHC5CAMIO_SERVO_FIND;
 		ptp_schedule_worker(c->ptp_clock, 0);
 	}
 
 	dev_info(c->dev, "PTP clock %d (time base at %lu Hz), servo %s\n",
 		 ptp_clock_index(c->ptp_clock), c->clk_hz,
-		 chc5camio_servo_owns(c) ? "on" : "off (no event input in the device tree)");
+		 !chc5camio_servo_owns(c) ? "off (no circuitvalley,ptp-ethernet in the device tree)" :
+		 s->ref == CHC5CAMIO_REF_GEM ? "on, follows the GEM clock" : "on, PHY event pin");
 	return 0;
 }
 
@@ -894,6 +1252,8 @@ static void chc5camio_ptp_remove(struct chc5camio_device *c)
 
 	mutex_lock(&c->ptp_lock);
 	c->servo.state = CHC5CAMIO_SERVO_OFF;
+	c->sched_on = false;
+	c->sched_pending = false;
 	c->ptp_ctrl = 0;
 	chc5camio_write(c, CHC5CAMIO_REG_EVT_CFG, 0);
 	chc5camio_write(c, CHC5CAMIO_REG_PTP_CTRL, 0);
@@ -902,6 +1262,12 @@ static void chc5camio_ptp_remove(struct chc5camio_device *c)
 	if (c->phydev)
 		marvell_phy_ptp_event_enable(c->phydev, false);
 	chc5camio_servo_drop_phy(c);
+	if (c->ndev) {
+		put_device(&c->ndev->dev);
+		c->ndev = NULL;
+	}
+	of_node_put(c->eth_np);
+	c->eth_np = NULL;
 }
 
 static ssize_t ptp_servo_show(struct device *dev, struct device_attribute *attr,
@@ -909,6 +1275,7 @@ static ssize_t ptp_servo_show(struct device *dev, struct device_attribute *attr,
 {
 	struct chc5camio_device *c = dev_get_drvdata(dev);
 	struct chc5camio_servo s;
+	bool ptp_time;
 	int idx;
 
 	if (!c || !c->ptp_clock)
@@ -916,15 +1283,17 @@ static ssize_t ptp_servo_show(struct device *dev, struct device_attribute *attr,
 
 	mutex_lock(&c->ptp_lock);
 	s = c->servo;
+	ptp_time = chc5camio_on_ptp_time(c);
 	idx = ptp_clock_index(c->ptp_clock);
 	mutex_unlock(&c->ptp_lock);
 
 	return sysfs_emit(buf,
-			  "clock ptp%d state %s locked %d offset_ns %lld freq_ppb %lld period_ms %u\n"
+			  "clock ptp%d ref %s state %s locked %d offset_ns %lld freq_ppb %lld period_ms %u ptp_time %d\n"
 			  "samples %u missed %u rejected %u steps %u arms %u refused %u errors %u\n",
-			  idx, chc5camio_servo_names[s.state], s.locked,
+			  idx, s.ref == CHC5CAMIO_REF_GEM ? "gem" : "pin13",
+			  chc5camio_servo_names[s.state], s.locked,
 			  s.last_err_ns, s.freq_ppb, s.period_ns / (u32)NSEC_PER_MSEC,
-			  s.samples, s.missed, s.rejected, s.steps, s.arms,
+			  ptp_time, s.samples, s.missed, s.rejected, s.steps, s.arms,
 			  s.refused, s.errors);
 }
 static DEVICE_ATTR_RO(ptp_servo);
@@ -977,6 +1346,7 @@ static int chc5camio_probe(struct platform_device *pdev)
 	c->dev = &pdev->dev;
 	mutex_init(&c->lock);
 	mutex_init(&c->ptp_lock);
+	INIT_DELAYED_WORK(&c->sched_work, chc5camio_sched_work);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	c->iomem = devm_ioremap_resource(&pdev->dev, res);
@@ -1073,6 +1443,7 @@ static int chc5camio_remove(struct platform_device *pdev)
 	v4l2_device_unregister(&c->v4l2_dev);
 	media_entity_cleanup(&c->subdev.entity);
 	v4l2_ctrl_handler_free(&c->ctrl_handler);
+	cancel_delayed_work_sync(&c->sched_work);
 	clk_disable_unprepare(c->axi_clk);
 	return 0;
 }

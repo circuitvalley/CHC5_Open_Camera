@@ -82,11 +82,6 @@
 
 #define RX_TS_MAX_AGE_MS	1000
 
-static unsigned int rx_drain_ms = 200;
-module_param(rx_drain_ms, uint, 0644);
-MODULE_PARM_DESC(rx_drain_ms,
-		 "empty the PHY arrival timestamp registers every N ms while RX timestamping is on (0 = off)");
-
 #define PTP_PORT_CONFIG_0			0
 #define PTP_PORT_CONFIG_0_DISTSPECCHECK		BIT(11)
 #define PTP_PORT_CONFIG_0_DISTSOVERWRITE	BIT(1)
@@ -243,12 +238,13 @@ static bool marvell_rxq_rxtstamp(struct marvell_rxq *rxq, struct sk_buff *skb,
 	return found;
 }
 
-static void marvell_rxq_expire(struct marvell_rxq *rxq,
+static long marvell_rxq_expire(struct marvell_rxq *rxq,
 			       struct sk_buff_head *list)
 {
 	struct marvell_rxts *rxts, *tmp;
 	unsigned long flags;
 	struct sk_buff *skb;
+	long delay = -1;
 
 	spin_lock_irqsave(&rxq->rx_lock, flags);
 	list_for_each_entry_safe(rxts, tmp, &rxq->rx_pend, node)
@@ -257,11 +253,14 @@ static void marvell_rxq_expire(struct marvell_rxq *rxq,
 	while ((skb = skb_dequeue(&rxq->rx_queue)) != NULL) {
 		if (!time_is_before_jiffies(MARVELL_TS_CB(skb)->timeout)) {
 			__skb_queue_head(&rxq->rx_queue, skb);
+			delay = (long)(MARVELL_TS_CB(skb)->timeout - jiffies) + 1;
 			break;
 		}
 		__skb_queue_tail(list, skb);
 	}
 	spin_unlock_irqrestore(&rxq->rx_lock, flags);
+
+	return delay;
 }
 
 /* Extract the sequence ID */
@@ -280,6 +279,15 @@ static u8 ptp_msgid(const struct ptp_header *ptp_hdr)
 static void marvell_ts_schedule(struct marvell_ts *ts)
 {
 	marvell_tai_schedule(ts->tai, 0);
+}
+
+static long marvell_ts_min_delay(long a, long b)
+{
+	if (a < 0)
+		return b;
+	if (b < 0)
+		return a;
+	return min(a, b);
 }
 
 /* Check for a rx timestamp entry, try to find the corresponding skb and
@@ -380,17 +388,19 @@ EXPORT_SYMBOL_GPL(marvell_ts_rxtstamp);
  * our list to netif_rx() - this avoids calling netif_rx() with our
  * mutex held.
  */
-static void marvell_ts_rx_expire(struct marvell_ts *ts)
+static long marvell_ts_rx_expire(struct marvell_ts *ts)
 {
 	const struct ptp_header *ptp_hdr;
 	struct sk_buff_head list;
 	struct sk_buff *skb;
+	long delay = -1;
 	int i;
 
 	__skb_queue_head_init(&list);
 
 	for (i = 0; i < ARRAY_SIZE(ts->rxq); i++)
-		marvell_rxq_expire(&ts->rxq[i], &list);
+		delay = marvell_ts_min_delay(delay,
+					     marvell_rxq_expire(&ts->rxq[i], &list));
 
 	while ((skb = __skb_dequeue(&list)) != NULL) {
 		ptp_hdr = MARVELL_TS_CB(skb)->hdr;
@@ -399,71 +409,103 @@ static void marvell_ts_rx_expire(struct marvell_ts *ts)
 			ptp_msgid(ptp_hdr));
 		netif_rx(skb);
 	}
+
+	return delay;
 }
 
-/* Complete the transmit timestamping; this is called to read the transmit
- * timestamp from the PHY, and report back the transmitted timestamp.
- */
-static int marvell_ts_txtstamp_complete(struct marvell_ts *ts)
+static void marvell_ts_tx_deliver(struct sk_buff *skb, u64 ns)
 {
 	struct skb_shared_hwtstamps shhwtstamps;
-	struct sk_buff *skb = ts->tx_skb;
+
+	memset(&shhwtstamps, 0, sizeof(shhwtstamps));
+	shhwtstamps.hwtstamp = ns_to_ktime(ns);
+	skb_complete_tx_timestamp(skb, &shhwtstamps);
+}
+
+static int marvell_ts_tx_irq(struct marvell_ts *ts)
+{
+	struct sk_buff *skb = NULL;
 	struct marvell_hwts hwts;
+	unsigned long flags;
+	bool stale = false;
+	u16 waiting = 0;
 	int err;
 	u64 ns;
 
 	err = ts->ops->ts_port_read_ts(ts->dev, &hwts, ts->port,
 				       MARVELL_TS_DEP);
-	dev_dbg(ts->dev, "p%u: tx: read_ts %d\n", ts->port, err);
-	if (err < 0)
-		goto fail;
-
-	if (err == 0) {
-		if (time_is_before_jiffies(MARVELL_TS_CB(skb)->timeout)) {
-			dev_warn_ratelimited(ts->dev,
-					     "p%u: tx: timestamp timeout\n",
-					     ts->port);
-			goto free;
-		}
-		return 0;
+	if (err < 0) {
+		dev_err_ratelimited(ts->dev, "p%u: tx: failed reading PTP: %pe\n",
+				    ts->port, ERR_PTR(err));
+		return err;
 	}
+	if (err == 0)
+		return 0;
 
 	dev_dbg(ts->dev, "p%u: tx: stat=0x%x seq=%u ts=%u\n", ts->port,
 		hwts.stat, hwts.seq, hwts.time);
 
-	/* Check the status */
 	if ((hwts.stat & MV_STATUS_INTSTATUS_MASK) !=
-	    MV_STATUS_INTSTATUS_NORMAL) {
+	    MV_STATUS_INTSTATUS_NORMAL)
 		dev_warn_ratelimited(ts->dev,
 				     "p%u: tx: timestamp overrun (stat=0x%x seq=%u)\n",
 				     ts->port, hwts.stat, hwts.seq);
-		goto free;
-	}
 
-	/* Reject if the sequence number doesn't match */
-	if (hwts.seq != MARVELL_TS_CB(skb)->seq) {
-		dev_warn_ratelimited(ts->dev,
-				     "p%u: tx: timestamp unexpected sequence id\n",
-				     ts->port);
-		goto free;
-	}
-
-	ts->tx_skb = NULL;
-
-	/* Set the timestamp */
 	ns = marvell_tai_cyc2time(ts->tai, hwts.time);
-	memset(&shhwtstamps, 0, sizeof(shhwtstamps));
-	shhwtstamps.hwtstamp = ns_to_ktime(ns);
-	skb_complete_tx_timestamp(skb, &shhwtstamps);
-	return 1;
 
-fail:
-	dev_err_ratelimited(ts->dev, "p%u: failed reading PTP: %pe\n",
-			    ts->port, ERR_PTR(err));
-free:
-	dev_kfree_skb_any(skb);
-	ts->tx_skb = NULL;
-	return -1;
+	spin_lock_irqsave(&ts->tx_lock, flags);
+	if (ts->tx_skb && ts->tx_seq == hwts.seq) {
+		skb = ts->tx_skb;
+		ts->tx_skb = NULL;
+	} else if (ts->tx_skb) {
+		stale = true;
+		waiting = ts->tx_seq;
+	} else {
+		ts->dep_pending = true;
+		ts->dep_seq = hwts.seq;
+		ts->dep_ns = ns;
+		ts->dep_expires = jiffies + msecs_to_jiffies(TX_TIMEOUT_MS);
+	}
+	spin_unlock_irqrestore(&ts->tx_lock, flags);
+
+	if (skb)
+		marvell_ts_tx_deliver(skb, ns);
+	else if (stale)
+		dev_warn_ratelimited(ts->dev,
+				     "p%u: tx: dropped the stamp of seq %u, seq %u is waiting\n",
+				     ts->port, hwts.seq, waiting);
+
+	return 1;
+}
+
+static long marvell_ts_tx_expire(struct marvell_ts *ts)
+{
+	struct sk_buff *skb = NULL;
+	unsigned long flags;
+	long delay = -1;
+	u16 seq = 0;
+
+	spin_lock_irqsave(&ts->tx_lock, flags);
+	if (ts->tx_skb) {
+		if (time_after(jiffies, ts->tx_timeout)) {
+			skb = ts->tx_skb;
+			seq = ts->tx_seq;
+			ts->tx_skb = NULL;
+		} else {
+			delay = (long)(ts->tx_timeout - jiffies) + 1;
+		}
+	}
+	if (ts->dep_pending && time_after(jiffies, ts->dep_expires))
+		ts->dep_pending = false;
+	spin_unlock_irqrestore(&ts->tx_lock, flags);
+
+	if (skb) {
+		dev_warn_ratelimited(ts->dev, "p%u: tx: timestamp timeout (seq %u)\n",
+				     ts->port, seq);
+		dev_kfree_skb_any(skb);
+	}
+
+	return delay;
 }
 
 /* Check whether the skb will be timestamped on transmit; we only support
@@ -473,6 +515,10 @@ free:
 bool marvell_ts_txtstamp(struct marvell_ts *ts, struct sk_buff *skb, int type)
 {
 	const struct ptp_header *ptp_hdr;
+	bool busy = false, have = false;
+	unsigned long flags;
+	u16 seq, waiting = 0;
+	u64 ns = 0;
 	u8 msgid;
 
 	if (ts->tx_type != HWTSTAMP_TX_ON)
@@ -483,30 +529,46 @@ bool marvell_ts_txtstamp(struct marvell_ts *ts, struct sk_buff *skb, int type)
 		return false;
 
 	msgid = ptp_msgid(ptp_hdr);
+	seq = ptp_seqid(ptp_hdr);
 	if (BIT(msgid) & ~MV_PTP_MSD_ID_TS_EN) {
 		dev_dbg(ts->dev, "p%u: tx: not timestamping msgid %u seq %u\n",
-			ts->port, msgid, ptp_seqid(ptp_hdr));
+			ts->port, msgid, seq);
 		return false;
 	}
 
-	MARVELL_TS_CB(skb)->seq = ptp_seqid(ptp_hdr);
-	MARVELL_TS_CB(skb)->timeout = jiffies +
-		msecs_to_jiffies(TX_TIMEOUT_MS);
+	dev_dbg(ts->dev, "p%u: tx: new, msgid=%u seq=%u\n", ts->port, msgid,
+		seq);
 
-	dev_dbg(ts->dev, "p%u: tx: new, msgid=%u seq=%u\n", ts->port,
-		msgid, MARVELL_TS_CB(skb)->seq);
+	spin_lock_irqsave(&ts->tx_lock, flags);
+	if (ts->tx_skb) {
+		busy = true;
+		waiting = ts->tx_seq;
+	} else {
+		skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 
-	if (cmpxchg(&ts->tx_skb, NULL, skb) != NULL)
+		if (ts->dep_pending && ts->dep_seq == seq &&
+		    !time_after(jiffies, ts->dep_expires)) {
+			have = true;
+			ns = ts->dep_ns;
+		} else {
+			ts->tx_skb = skb;
+			ts->tx_seq = seq;
+			ts->tx_timeout = jiffies + msecs_to_jiffies(TX_TIMEOUT_MS);
+		}
+		ts->dep_pending = false;
+	}
+	spin_unlock_irqrestore(&ts->tx_lock, flags);
+
+	if (busy) {
+		dev_warn_ratelimited(ts->dev,
+				     "p%u: tx: seq %u not timestamped, seq %u still waiting\n",
+				     ts->port, seq, waiting);
 		return false;
+	}
 
-	/* DP83640 marks the skb for hw timestamping. Since the MAC driver
-	 * may call skb_tx_timestamp() but may not support timestamping
-	 * itself, it may not set this flag. So, we need to do this here.
-	 */
-	skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
-
-	/* Only schedule the aux_work if we haven't seen an interrupt. */
-	if (!ts->irq_handler_called)
+	if (have)
+		marvell_ts_tx_deliver(skb, ns);
+	else
 		marvell_ts_schedule(ts);
 
 	return true;
@@ -708,48 +770,23 @@ static void marvell_ts_port_disable(struct marvell_ts *ts)
 
 long marvell_ts_aux_work(struct marvell_ts *ts)
 {
-	if (!ts->irq_handler_called) {
-		if (ts->rx_filter != HWTSTAMP_FILTER_NONE) {
-			marvell_ts_rx_ts(ts, 0);
-			marvell_ts_rx_ts(ts, 1);
-		}
-
-		if (ts->tx_skb)
-			marvell_ts_txtstamp_complete(ts);
-	}
-
-	marvell_ts_rx_expire(ts);
-
-	if (ts->tx_skb)
-		return 0;
-	else if (!skb_queue_empty(&ts->rxq[0].rx_queue) ||
-		 !skb_queue_empty(&ts->rxq[1].rx_queue))
-		return 1;
-
-	if (!ts->irq_handler_called && ts->rx_filter != HWTSTAMP_FILTER_NONE &&
-	    rx_drain_ms)
-		return msecs_to_jiffies(rx_drain_ms);
-
-	return -1;
+	return marvell_ts_min_delay(marvell_ts_tx_expire(ts),
+				    marvell_ts_rx_expire(ts));
 }
 EXPORT_SYMBOL_GPL(marvell_ts_aux_work);
 
 irqreturn_t marvell_ts_irq(struct marvell_ts *ts)
 {
-	irqreturn_t ret = IRQ_NONE;
-
-	ts->irq_handler_called = true;
+	bool handled = false;
 
 	if (marvell_ts_rx_ts(ts, 0))
-		ret = IRQ_HANDLED;
-
+		handled = true;
 	if (marvell_ts_rx_ts(ts, 1))
-		ret = IRQ_HANDLED;
+		handled = true;
+	if (marvell_ts_tx_irq(ts) > 0)
+		handled = true;
 
-	if (ts->tx_skb && marvell_ts_txtstamp_complete(ts))
-		ret = IRQ_HANDLED;
-
-	return ret;
+	return handled ? IRQ_HANDLED : IRQ_NONE;
 }
 EXPORT_SYMBOL_GPL(marvell_ts_irq);
 
@@ -780,6 +817,8 @@ EXPORT_SYMBOL_GPL(marvell_ts_global_config);
 
 void marvell_ts_remove(struct marvell_ts *ts)
 {
+	struct sk_buff *skb;
+	unsigned long flags;
 	int i;
 
 	if (!ts->tai)
@@ -791,8 +830,12 @@ void marvell_ts_remove(struct marvell_ts *ts)
 	marvell_ts_port_disable(ts);
 
 	/* Free or dequeue all pending skbs */
-	kfree_skb(ts->tx_skb);
+	spin_lock_irqsave(&ts->tx_lock, flags);
+	skb = ts->tx_skb;
 	ts->tx_skb = NULL;
+	ts->dep_pending = false;
+	spin_unlock_irqrestore(&ts->tx_lock, flags);
+	kfree_skb(skb);
 
 	for (i = 0; i < ARRAY_SIZE(ts->rxq); i++)
 		marvell_rxq_purge(&ts->rxq[i]);
@@ -812,6 +855,7 @@ int marvell_ts_probe(struct marvell_ts *ts, struct device *dev,
 	ts->caps = caps;
 	ts->port = port;
 
+	spin_lock_init(&ts->tx_lock);
 	for (i = 0; i < ARRAY_SIZE(ts->rxq); i++)
 		marvell_rxq_init(&ts->rxq[i]);
 

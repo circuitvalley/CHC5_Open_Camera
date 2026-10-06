@@ -118,10 +118,20 @@ module pixel_packer #(
         .sel_tdata(sel_tdata), .sel_tvalid(sel_tvalid), .sel_tready(sel_tready), .sel_tlast(sel_tlast), .sel_tuser(sel_tuser)
     );
 
+    wire [PPC*24-1:0] k_tdata;
+    wire              k_tvalid, k_tready, k_tlast;
+    wire [0:0]        k_tuser;
+    chc5_axis_skid #(.DW(PPC*24), .KW(1)) u_in_skid (
+        .aclk(aclk), .aresetn(aresetn & ~fmt_changed),
+        .s_tdata(sel_tdata), .s_tkeep(1'b1), .s_tvalid(sel_tvalid), .s_tready(sel_tready),
+        .s_tlast(sel_tlast), .s_tuser(sel_tuser),
+        .m_tdata(k_tdata), .m_tkeep(), .m_tvalid(k_tvalid), .m_tready(k_tready),
+        .m_tlast(k_tlast), .m_tuser(k_tuser));
+
     pixel_packer_core #(.PPC(PPC), .BPP(BPP)) u_core (
         .aclk(aclk), .aresetn(aresetn),
         .pack_mode(pack_mode), .fmt_changed(fmt_changed),
-        .sel_tdata(sel_tdata), .sel_tvalid(sel_tvalid), .sel_tready(sel_tready), .sel_tlast(sel_tlast), .sel_tuser(sel_tuser),
+        .sel_tdata(k_tdata), .sel_tvalid(k_tvalid), .sel_tready(k_tready), .sel_tlast(k_tlast), .sel_tuser(k_tuser),
         .m_axis_tdata(m_axis_tdata), .m_axis_tvalid(m_axis_tvalid), .m_axis_tready(m_axis_tready),
         .m_axis_tlast(m_axis_tlast), .m_axis_tuser(m_axis_tuser), .m_axis_tkeep(m_axis_tkeep)
     );

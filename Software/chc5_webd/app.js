@@ -275,6 +275,7 @@ function showLogin() {
             }
             setAuth(d.token, d.user || u.value, d.role || '');
             setText('tb_user', authUser);
+            refreshToolbarIdentity();
             const ov = $('#login_overlay');
             if (ov) ov.remove();
             if (appEl) appEl.style.display = '';
@@ -430,6 +431,10 @@ function buildShell() {
 
     if (authUser) setText('tb_user', authUser);
 
+    if (authToken) refreshToolbarIdentity();
+}
+
+function refreshToolbarIdentity() {
     apiGet('/api/device_info')
         .then(di => setText('tb_serial',
                             di && di.provisioned && di.serial ? di.serial
@@ -755,11 +760,39 @@ async function uploadFile(file, store, btn) {
     }
 }
 
+const MEDIUM_NAME = { sd: 'SD card', qspi: 'QSPI flash', nfs: 'NFS', ram: 'RAM - not kept across reboots' };
+function bootMessage(s) {
+    if (!s) return null;
+    if (s.running === 'sd')
+        return null;
+    switch (s.last_sd) {
+    case 'noslot':  return { warn: true, text: 'SD boot is on, but the SD card has no bootable system '
+                           + 'left, so the camera started from QSPI. Rewrite the card, or switch SD boot '
+                           + 'off in Device Settings.' };
+    case 'nocard':  return { warn: true, text: 'SD boot was switched off at this boot: no SD card was '
+                           + 'found. The camera started from QSPI.' };
+    case 'notboot': return { warn: true, text: 'SD boot was switched off at this boot: the SD card is '
+                           + 'not a CHC5 boot card. The camera started from QSPI.' };
+    case 'badscript': return { warn: true, text: 'SD boot was switched off at this boot: the boot script '
+                           + 'on the SD card (chc5sd.scr) is damaged. Rewrite the card. The camera started from QSPI.' };
+    case 'qspi':    return { warn: false, text: 'Back on QSPI: SD boot was switched off from the SD system.' };
+    }
+    return null;
+}
+function bootBanner(msg) {
+    if (!msg) return el('div', {});
+    return el('div', { style: 'background:' + (msg.warn ? '#fff3cd' : '#d1ecf1') + ';border:1px solid '
+        + (msg.warn ? '#ffeeba' : '#bee5eb') + ';color:' + (msg.warn ? '#856404' : '#0c5460')
+        + ';padding:0.4rem 0.6rem;border-radius:4px;margin:0.3rem 0;font-size:0.9em;max-width:60rem;' },
+        (msg.warn ? '\u26a0 ' : '') + msg.text);
+}
+
 async function refreshStorageBadge() {
     try {
         const s = await apiGet('/api/storage');
         const txt = (s && s.ok)
-            ? 'Free: ' + humanSize(s.free) + ' / ' + humanSize(s.total)
+            ? 'Free' + (MEDIUM_NAME[s.medium] ? ' (' + MEDIUM_NAME[s.medium] + ')' : '') + ': '
+              + humanSize(s.free) + ' / ' + humanSize(s.total)
             : 'Free: ?';
         document.querySelectorAll('.upload_storage').forEach(e => {
             e.textContent = txt;
@@ -813,17 +846,18 @@ const pageDashboard = {
         const sysInfo = panel({ css: 'width: fit-content; min-width: 33rem;', extraClass: 'kvfit' },
             panelTitle('System Info'),
             el('div', { class: 'kvgrid' },
+                kvRow('d_boot_dev',   'Running from:',  'Where this system was started from: QSPI flash, or the owner SD card (see Device Settings > Boot Device)'),
                 kvRow('d_v_boot_env', 'Boot platform:', 'Which boot slot/platform is running (e.g. SD or QSPI, A/B slot)'),
                 kvRow('d_v_chc5',     'CHC5 System:',   'CHC5 system release version (the whole-image build stamp)'),
                 kvRow('d_v_flavor',   'Image flavour:', 'dev: the update keyring trusts official releases AND bundles signed with the open dev key from the source repo. production: official releases only. debug: the open dev key only.'),
                 kvRow('d_v_bootimg',  'Boot image copy:', 'Which BOOT.BIN copy the boot ROM used. primary = the working copy at flash offset 0. golden = the working copy is damaged and the camera is running on the spare copy at 2 MB: re-flash the boot layer soon, there is no second spare.'),
-                kvRow('d_v_pd',       'Platformd:',     'chc5_platformd daemon version (privileged config owner)'),
-                kvRow('d_v_camcfg',   'Camcfgd:',       'camcfgd daemon version (V4L2 pipeline + AE)'),
-                kvRow('d_v_gvcp',     'GVCP:',          'GigE Vision (GVCP) server version'),
+                kvRow('d_v_pd',       'Platform service:', 'Version of the platform service (settings, libraries, updates)'),
+                kvRow('d_v_camcfg',   'Camera service:', 'Version of the camera service (image pipeline, auto exposure)'),
+                kvRow('d_v_gvcp',     'GigE Vision server:', 'Version of the GigE Vision control server'),
                 kvRow('d_v_kernel',   'Kernel:',        'Running Linux kernel version'),
                 kvRow('d_v_bs',       'Bitstream:',     'FPGA bitstream currently loaded'),
-                kvRow('d_v_webd',     'webd:',          'chc5_webd version (this web UI server)'),
-                kvRow('d_v_usb',      'usb:',           'USB3-Vision controller firmware version'),
+                kvRow('d_v_webd',     'Web server:',    'Version of this web interface'),
+                kvRow('d_v_usb',      'USB firmware:',  'Version of the USB controller firmware'),
                 kvRow('d_v_time',     'Device time:',   'Current device clock (UTC)'),
             ),
         );
@@ -871,18 +905,29 @@ const pageDashboard = {
         const storagePanel = panel({ css: 'min-width: 22rem;' },
             panelTitle('Storage Health'),
             el('div', { class: 'kvgrid' },
+                kvRow('d_st_free', 'Data partition:',          'Where the /var data partition (settings + firmware libraries) is, and its free space'),
                 kvRow('d_st_wear', 'Flash wear (QSPI):',       'Estimated QSPI flash wear: peak erase count vs the ~100,000 P/E-cycle rating'),
                 kvRow('d_st_ec',   'Peak erase count:',        'Highest erase count across all QSPI flash blocks (UBI max erase count)'),
                 kvRow('d_st_bad',  'Bad blocks:',              'Number of bad/retired flash blocks (rises near end of flash life)'),
-                kvRow('d_st_sd',   'SD written (since boot):', 'Bytes written to the SD card since boot (from kernel diskstats)'),
-                kvRow('d_st_free', 'Data partition free:',     'Free space on the /var data partition'),
+                kvRow('d_st_sd',   'SD card:',                 'The card in the SD slot: name, type and manufacture date'),
+                kvRow('d_st_sdst', 'SD card state:',           'Read-only either because the card locked itself (worn out, or write-protected with a tool), or because the camera\'s write-protect signal says so - e.g. a system older than the 2026-10-02 kernel on a board whose PHY interrupt wire shares the WP pin'),
+                kvRow('d_st_sdwr', 'SD card wear:',            'SD cards report no wear; eMMC reports an estimate in 10% steps'),
+                kvRow('d_st_sdfs', 'SD data written:',         'What ext4 has written to its SD partitions over their lifetime (kept across reboots)'),
+                kvRow('d_st_sderr','SD filesystem errors:',    'ext4 error count on the SD partitions (kept in the superblock)'),
             ),
         );
 
+        const bootBox = el('div', {});
+        p.appendChild(bootBox);
         p.appendChild(el('div', {
             class: 'container',
             style: 'gap: 0.5rem; align-items: flex-start; flex-wrap: wrap;',
         }, sysInfo, deviceInfo, storagePanel, cfg, locatePanel));
+
+        apiGet('/api/bootsel').then(s => {
+            kvShow('d_boot_dev', s.running === 'sd' ? 'SD card' : 'QSPI flash');
+            bootBox.replaceChildren(bootBanner(bootMessage(s)));
+        }).catch(() => kvShow('d_boot_dev', '-'));
 
         apiGet('/api/storage').then(s => {
             const w = s.wear || {};
@@ -899,14 +944,29 @@ const pageDashboard = {
                 kvShow('d_st_ec',  '');
                 kvShow('d_st_bad', '');
             }
-            if (w.sd_present) {
-                kvShow('d_st_sd', humanSize(w.sd_written_bytes || 0));
+            const c = s.sd_card || {};
+            if (c.present) {
+                kvShow('d_st_sd', [c.name, c.kind, c.manufactured ? 'made ' + c.manufactured : '']
+                    .filter(Boolean).join(', '));
+                kvShow('d_st_sdst', !c.read_only ? 'writable'
+                    : c.csd_perm_wp ? 'read-only - the card has locked itself for good (worn out), replace it'
+                    : c.csd_tmp_wp  ? 'read-only - the card is temporarily write-protected (clear it with an SD card tool)'
+                    : c.csd_perm_wp === false ? 'read-only - write-protected by the camera\'s WP signal, not by the card (the card is fine)'
+                    : 'read-only (cause unknown)');
+                kvShow('d_st_sdwr', !c.wear_reported ? 'not reported (SD cards have no wear counter)'
+                    : c.life_exceeded ? '\u26a0 rated life exceeded'
+                    : (c.life_used_pct_max != null ? 'up to ' + c.life_used_pct_max + '% used' : '-')
+                      + (c.pre_eol >= 2 ? ' \u26a0 spare blocks running out' : ''));
+                const fs = c.filesystems || [];
+                kvShow('d_st_sdfs', fs.length ? humanSize(fs.reduce((a, f) => a + f.lifetime_write_kb, 0) * 1024) : '');
+                const errs = fs.reduce((a, f) => a + f.errors, 0);
+                kvShow('d_st_sderr', fs.length ? (errs ? '\u26a0 ' + errs : '0') : '');
             } else {
-                kvShow('d_st_sd', 'n/a (not an SD boot)');
+                kvShow('d_st_sd', 'no card');
+                ['d_st_sdst', 'd_st_sdwr', 'd_st_sdfs', 'd_st_sderr'].forEach(id => kvShow(id, ''));
             }
-            kvShow('d_st_free', s.ok
-                ? humanSize(s.free) + ' / ' + humanSize(s.total)
-                : '-');
+            kvShow('d_st_free', (MEDIUM_NAME[s.medium] ? MEDIUM_NAME[s.medium] + ' - ' : '')
+                + (s.ok ? humanSize(s.free) + ' free of ' + humanSize(s.total) : '-'));
         }).catch(() => {});
 
         await this.refresh();
@@ -1381,7 +1441,7 @@ const pageHdmi = {
             'Standalone HDMI is for running with NO computer attached (bring-up, focusing, field use); turn it off to hand the camera back to a USB/GigE host.',
             'In standalone there is no separate exposure control: the HDMI fps sets the exposure (~1/fps). The "Exposure (from fps)" box shows what the chosen fps will apply.',
             'Standalone needs auto-exposure enabled from the camera itself - no host is there to enable it. Turn on "Force Auto-Exposure" on the ISP Control tab.',
-            'Turning HDMI off entirely stops the display VDMA and frees DDR bandwidth - worth doing if you are pushing a high-rate USB/GigE stream and nothing is plugged into the HDMI port.',
+            'Turning HDMI off entirely stops the HDMI video path and frees memory bandwidth - worth doing if you are pushing a high-rate USB/GigE stream and nothing is plugged into the HDMI port.',
             'The crop only applies when the sensor is bigger than 1920x1080: HDMI shows a 1:1 window of the frame (there is no scaler). Auto-centre puts that window in the middle; turn it off to pan by typing the start coordinate in sensor pixels.',
         ],
     },
@@ -1415,8 +1475,8 @@ const pageHdmi = {
         cropAuto.addEventListener('change', syncCropDep);
         const hdmiEnable = el('input', { type: 'checkbox', class: 'toggle', id: 'im_hdmi_en',
             title: 'Master HDMI output switch. When OFF, the HDMI port shows nothing '
-                 + 'regardless of USB/Ethernet streaming, and the display VDMA is '
-                 + 'stopped to free DDR bandwidth. Persisted across reboots.' });
+                 + 'regardless of USB/Ethernet streaming, and the HDMI video path is '
+                 + 'stopped to free memory bandwidth. Persisted across reboots.' });
         const sahdmi   = el('input', { type: 'checkbox', class: 'toggle', id: 'im_sahdmi',
             title: 'Start the camera at 1920x1080 (binned) so HDMI shows live video '
                  + 'when no USB/Ethernet host is connected. A connected host always '
@@ -1539,6 +1599,7 @@ const pageUsbFw = {
     help: {
         tips: [
             'Don\u2019t power off or unplug while programming \u2014 it writes the USB controller\u2019s EEPROM.',
+            'After programming finishes, power-cycle the camera before streaming over USB. Until it restarts, the camera does not see the new firmware\u2019s start requests, so a USB stream shows no video.',
             'Add and delete get slower as the library grows \u2014 each change re-validates the entry and re-packs the whole library archive (xz) in the firmware store, so large libraries take longer.',
         ],
     },
@@ -1578,6 +1639,7 @@ const pageUsbFw = {
             el('div', { style: 'background:#e0e0e0; border-radius:4px; height:14px; overflow:hidden; margin-top:0.2rem;' },
                 el('div', { id: 'uf_bar', style: 'background:#4a90e2; height:14px; width:0%; transition:width 0.3s ease;' }),
             ),
+            el('div', { id: 'uf_pwr', style: 'font-size: 0.9em; min-height: 1.2em; margin-top: 0.2rem;' }, ''),
             el('div', { id: 'uf_le',  style: 'color: #c00; font-size: 0.9em; min-height: 1.2em;' }, ''),
             el('div', { id: 'uf_lue', style: 'color: #c00; font-size: 0.85em; min-height: 1.2em; font-style: italic;' }, ''),
             el('div', { id: 'uf_lun', style: 'color: #555; font-size: 0.85em; min-height: 1.2em;' }, ''),
@@ -1643,6 +1705,11 @@ const pageUsbFw = {
             setText('uf_pc', fmt.pct(st.percent));
             const bar = document.getElementById('uf_bar');
             if (bar) bar.style.width = (st.percent || 0) + '%';
+            setText('uf_pwr', st.phase === 'done'
+                ? 'Programming finished. Power-cycle the camera is recommended.'
+                : (st.phase && st.phase !== 'idle' && st.phase !== 'failed')
+                    ? 'When programming finishes, power-cycle the camera before streaming over USB.'
+                    : '');
             setText('uf_le',  st.last_error || '');
             setText('uf_lue', st.last_upload_error || '');
             setText('uf_lun', st.last_upload_note ? ('Note: ' + st.last_upload_note) : '');
@@ -1656,7 +1723,7 @@ const pageBitstream = {
         tips: [
             'Steps: (1) prepare a .xz containing bitstream.bin and manifest.json at the top level (overlay.dtbo optional); (2) Upload; (3) Activate; (4) watch the Phase / Progress bar below until it completes.',
             'Activate applies LIVE \u2014 the FPGA is reprogrammed immediately, and video runs on the new fabric without a reboot. This is the opposite of the Sensor Library, where activation only stages the change for the next boot.',
-            'A reboot is still RECOMMENDED after a successful activation. The live reprogram swaps the fabric but does not re-probe the drivers bound to it: they were matched against the previous design, so a PL block whose address or configuration moved can end up driven by a driver that no longer fits. Rebooting re-probes everything from the device tree. Not required \u2014 many bitstream pairs differ in ways nothing is bound to \u2014 which is why the panel recommends it rather than forcing it.',
+            'A reboot is still RECOMMENDED after a successful activation. The live reprogram changes the FPGA design at once, but the camera sets its software up for the design only at boot: where the new design differs from the old one, parts of the image pipeline can misbehave until a reboot. Not required -- many bitstream pairs differ in ways that do not matter -- which is why the panel recommends it rather than forcing it.',
             'Live apply cuts both ways: no reboot is needed to activate, and equally no reboot will undo a bad one. To back out, activate a known-good entry again.',
             'Activate is REFUSED while the camera is streaming. Reprogramming the FPGA pulls the PL out from under the video pipeline mid-transfer, which can wedge the internal bus and leave the next reboot needing a power cycle. Stop acquisition first, then activate.',
             'If the live reprogram fails, the bitstream is not lost: it has already been written to the file the FPGA loads at every boot, so it is STAGED. The panel below shows the reason it failed and offers a Reboot now button \u2014 rebooting applies it through the normal boot path, which does not have to reprogram a running FPGA.',
@@ -1810,11 +1877,11 @@ const pageBitstream = {
                 if (st.phase === 'done') {
                     setText('bs_ok',
                         'Activation successful \u2014 the new bitstream is running. '
-                        + 'Some PL blocks and/or their drivers may need a reboot to '
-                        + 'function properly. Reboot recommended.');
+                        + 'Parts of the image pipeline may need a reboot to '
+                        + 'work properly. Reboot recommended.');
                     if (bsRb) {
-                        bsRb.title = 'Reboot the camera to re-probe the PL blocks '
-                                   + 'and their drivers against the new bitstream.';
+                        bsRb.title = 'Reboot the camera so its software is set up '
+                                   + 'for the new bitstream.';
                         bsRb.style.display = 'inline-flex';
                     }
                 } else {
@@ -2224,6 +2291,43 @@ const pageNetwork = {
         );
         row.appendChild(actPanel);
 
+        const bsRun  = el('div', { class: 'value' }, '-');
+        const bsCard = el('div', { class: 'value' }, '-');
+        const bsSw   = el('input', { type: 'checkbox', disabled: true,
+            title: 'Start from the SD card at the next reboot' });
+        const bsNote = el('div', { class: 'label',
+            style: 'margin-top:0.2rem;opacity:0.75;max-width:24rem;' }, '');
+        const bsLast = el('div', { style: 'max-width:26rem;' });
+        const BS_CARD = { none: 'No card', other: 'Not a CHC5 boot card', boot: 'CHC5 boot card' };
+        const bsLoad = () => apiGet('/api/bootsel').then(s => {
+            const sd = s.running === 'sd';
+            bsRun.textContent  = sd ? 'SD card' : 'QSPI';
+            bsCard.textContent = BS_CARD[s.card] || '-';
+            bsSw.checked  = sd ? !s.qspi_boot : !!s.sd_boot;
+            bsSw.disabled = authRole !== 'admin';
+            bsLast.replaceChildren(s.running === 'sd' ? el('div', {}) : bootBanner(bootMessage(s)));
+            bsNote.textContent = sd
+                ? (s.qspi_boot ? 'Starts from QSPI at the next reboot.' : 'Untick to go back to QSPI at the next reboot.')
+                : (s.sd_boot ? 'Starts from the SD card at the next reboot.'
+                             : 'Needs a CHC5 SD boot card in the slot. Takes effect at the next reboot.');
+        }).catch(() => { bsRun.textContent = '-'; bsNote.textContent = 'Boot device status unavailable'; });
+        bsSw.addEventListener('change', () => {
+            bsSw.disabled = true;
+            apiPost('/api/bootsel', { target: bsSw.checked ? 'sd' : 'qspi' })
+                .then(r => toast(r.message || 'Saved'))
+                .catch(e => toast(e.message, 'error'))
+                .finally(bsLoad);
+        });
+        bsLoad();
+        row.appendChild(panel({ css: 'width: fit-content;' },
+            panelTitle('Boot Device'),
+            labeled('Running from', bsRun),
+            labeled('SD card', bsCard),
+            labeled('Boot from SD card', bsSw),
+            bsNote,
+            bsLast,
+        ));
+
         const timeNow = el('div', { class: 'value', id: 'ns_time_now' }, '-');
         const timePanel = panel({ css: 'width: 30rem;' },
             panelTitle('Date & Time'),
@@ -2334,14 +2438,13 @@ const pageNetwork = {
                     "color:#842029;padding:0.5rem 0.75rem;border-radius:4px;" +
                     "margin-bottom:0.75rem;font-size:0.9em;'>" +
                     "&#9888; <b>No Ethernet interface detected.</b> " +
-                    "Platformd's startup scan found neither <code>macb</code> " +
-                    "nor <code>axienet</code> bound to a network port. " +
+                    "The camera found no Ethernet port at startup. " +
                     "Settings can still be saved, but Apply will fail until " +
                     "the FPGA bitstream is loaded and the link is up." +
                     "</div>";
                 applyBtn.disabled = true;
                 applyBtn.title = 'No Ethernet interface detected - ' +
-                                 'cannot apply live until a macb/axienet ' +
+                                 'cannot apply live until an Ethernet ' +
                                  'port is present.';
             } else {
                 ifaceBanner.innerHTML = '';
@@ -2890,27 +2993,35 @@ const pageAdminPassword = {
     },
 };
 
+const IOCAP = { TRIGGER: 1, SOFTWARE: 2, DEBOUNCE: 4, PTP_SYNC: 8, GENLOCK: 16,
+                NATIVE_STROBE: 32, SYNC_OUT: 64, PTP_PULSE: 128 };
 const CAMIO_DEC = {
     in_function:   ['Off', 'Hardware trigger', 'Sync in'],
     in_activation: ['Rising edge', 'Falling edge', 'Any edge', 'Level'],
-    strobe_src:    ['PL Calculated', 'Native Strobe'],
-    out_source:    ['Off', 'User value', 'Strobe', 'Exposure active', 'Status', 'Sync out', 'Trigger passthrough', 'PTP pulse'],
-    role:          ['Off (free-run)', 'Master', 'Slave'],
-    role_by:       ['Pin (XMASTER)', 'I2C register'],
-    trig_route:    ['XTRIG pin', 'XVS slave', 'I2C register'],
+    strobe_src:    ['PL generated', 'Native strobe'],
+    out_source:    ['Off', 'User output', 'Strobe', 'Exposure active', 'Trigger ready', 'Sync out', 'Input passthrough', 'PTP pulse'],
+    role:          ['Off', 'Master', 'Slave'],
+    role_by:       ['hardware pin', 'sensor register'],
+    trig_route:    ['trigger pin', 'frame-sync input', 'sensor register'],
+    sync_source:   ['Free run', 'Line0 trigger', 'Software trigger', 'Action command', 'PTP sync', 'Genlock (Sync in)'],
 };
 function camioLbl(map, v) {
     const a = CAMIO_DEC[map];
+    if (v === 254) return 'none';
+    if (v === 255) return 'not declared';
     return (a && a[v] !== undefined) ? a[v] : ('? (' + v + ')');
 }
 
 const pageIosync = {
     help: {
-        intro: 'Aux I/O + multi-camera sync (the chc5_camio_sync FPGA block): hardware trigger in, programmable strobe out, and genlock. GenICam (GigE DigitalIOControl / CHC5AuxSyncControl) or the USB aux block is the PRIMARY path; each panel here saves a persistent fallback that also applies live (last writer wins). The block enables itself automatically when any function is configured.',
+        intro: 'Trigger input, strobe and output line, and multi-camera sync. GenICam applications set the same settings over GigE Vision (DigitalIOControl, CHC5AuxSyncControl) and USB3 Vision; each panel here saves them on the camera and applies them at once. The last change wins, from whichever side. The I/O switches on by itself when anything here is set.',
         tips: [
-            'Not configured / disabled means nothing has driven the block: all muxes off, sensor XVS/XHS buffers Hi-Z, strobe and OPTO-out inactive, so the sensor free-runs.',
-            'All delays/durations are microseconds (the hardware resolves to ~10 us).',
-            'Sync role: Master drives the shared XVS/XHS out to other cameras; Slave follows an external master; Off = free-run.',
+            'Not configured: no trigger, no strobe, Line1 inactive, and the sensor runs free.',
+            'Line0 is the opto input and Line1 the opto output -- fixed directions, as on any machine-vision camera.',
+            'Sync source picks ONE frame timing: free run, a Line0 or software trigger, PTP sync (frames on the PTP time grid -- same rate on every camera) or genlock. A trigger and PTP sync are never active together. A choice this sensor cannot follow is replaced by one it can; Status shows the timing in use.',
+            'Limits: strobe delay, duration and minimum on-time 0 to 655350 us in 10 us steps; trigger delay 0 to 655350 us in 1 us steps; trigger divider 1 to 255; debounce 0 to 16777 us; PTP sync rate 0.01 to 1000 Hz.',
+            'Camera to camera (measured, IMX565): cable trigger or genlock start exposures about 3 us apart, a fixed delay from the optocouplers; PTP sync has no fixed offset but about 0.2 us of jitter from the network.',
+            'Synchronised GigE cameras finish their frames together, and on a shared host link their packets collide: set GevSCPD (packet delay) to about 15 us on every camera, or give each camera a different GevSCFTD (frame transmission delay), e.g. 5 ms.',
         ],
     },
     refreshMs: 1500,
@@ -2924,13 +3035,14 @@ const pageIosync = {
         const cv = (id) => (($('#' + id) || {}).checked ? 1 : 0);
         const num = (id, val, min, max) => el('input', { class: 'input', id, type: 'number',
             min: String(min), max: String(max), step: '1', value: String(val || 0), style: 'width:6rem;' });
-        const unum = (id, val) => {
-            const inp = el('input', { id, type: 'number', min: '0', max: '10000000', step: '10',
+        const unum = (id, val, grid, max) => {
+            const g = grid || 10;
+            const inp = el('input', { id, type: 'number', min: '0', max: String(max || 655350), step: String(g),
                 value: String(val || 0),
                 style: 'border:none; background:transparent; outline:none; width:4rem; padding:0; text-align:right; color:inherit; font:inherit;' });
             inp.addEventListener('blur', () => {
-                const n = Math.max(0, parseInt(inp.value || '0', 10) || 0);
-                inp.value = String(Math.round(n / 10) * 10);
+                const n = Math.min(max || 655350, Math.max(0, parseInt(inp.value || '0', 10) || 0));
+                inp.value = String(Math.round(n / g) * g);
             });
             return el('div', { class: 'input',
                 style: 'display:inline-flex; align-items:center; gap:0.15rem; width:6rem;' },
@@ -2946,7 +3058,8 @@ const pageIosync = {
             return s;
         };
         const grp = (t) => el('div', { class: 'label', style: 'font-weight:600; margin:0.5rem 0 0.1rem;' }, t);
-        const off = (v) => v === 0;
+        const caps = d.io_caps || 0;
+        const no = (bit) => !(caps & bit);
         const setDis = (id, dis) => {
             const e = $('#' + id); if (!e) return;
             e.disabled = !!dis;
@@ -2955,14 +3068,17 @@ const pageIosync = {
         };
         const applyModes = () => {
             const pl     = iv('io_strb_src') === 0;
-            const role   = iv('io_role');
-            const master = role === 1;
-            const trig   = iv('io_in_func')  === 1;
+            const src    = iv('io_src');
+            const line0  = src === 1;
+            const trig   = src === 1 || src === 2 || src === 5;
             const usr    = iv('io_out_src')  === 1;
             setDis('io_strb_delay', !pl);  setDis('io_strb_dur', !pl);  setDis('io_strb_min', !pl);
-            setDis('io_roleby', role === 0);
-            setDis('io_in_act', !trig);  setDis('io_in_inv', !trig);
-            setDis('io_trig_delay', !trig);  setDis('io_trig_div', !trig);  setDis('io_trigroute', !trig);
+            setDis('io_sync_rate', src !== 3);
+            setDis('io_in_act', !line0);
+            setDis('io_width', !line0 || no(IOCAP.SOFTWARE));
+            setDis('io_in_filter', no(IOCAP.DEBOUNCE));
+            setDis('io_trig_delay', !trig);  setDis('io_trig_div', !trig);
+            setDis('io_role', src === 4);
             setDis('io_out_uv', !usr);
         };
 
@@ -2983,73 +3099,95 @@ const pageIosync = {
             panelTitle('Aux Output Control'),
             grp('Strobe'),
             labeled('Enable',        chk('io_strb_en', d.strobe_enable),
-                { title: 'Enable the strobe / flash output generator.' }),
-            labeled('Source',        sel('io_strb_src', d.strobe_src, ['PL Calculated', 'Native Strobe'],
-                [false, off(d.cap_has_strobe)]),
-                { title: 'PL Calculated = fixed pulse per frame from the timing below. Native = pass the sensor exposure strobe (width follows exposure). Native Strobe is only available on a sensor with a native strobe (FSTROBE/TOUT0).' }),
+                { title: 'Turn the strobe (flash) output on. It reaches Line1 when Line1 Source = Strobe.' }),
+            labeled('Source',        sel('io_strb_src', d.strobe_src, CAMIO_DEC.strobe_src,
+                [false, no(IOCAP.NATIVE_STROBE)]),
+                { title: 'PL generated (StrobeSource PLGenerated): a fixed pulse each frame from the delay and duration below. Native strobe: the sensor\'s own exposure signal, so the pulse lasts as long as the exposure; only on a sensor that has one.' }),
             labeled('Delay',         unum('io_strb_delay', d.strobe_delay_us),
-                { title: 'Frame start (XVS) to strobe rise. 0 = at frame start. Only available when Source = PL Calculated.' }),
+                { title: 'Frame start to strobe rise, 0 to 655350 us in 10 us steps. 0 = at frame start. Only with Source = PL generated.' }),
             labeled('Duration',      unum('io_strb_dur', d.strobe_duration_us),
-                { title: 'Strobe pulse width (0 = no pulse). Only available when Source = PL Calculated.' }),
+                { title: 'Strobe pulse width, 0 to 655350 us in 10 us steps (0 = no pulse). Only with Source = PL generated.' }),
             labeled('Min on',        unum('io_strb_min', d.strobe_minon_us),
-                { title: 'Minimum on-time floor; stretches short pulses. 0 = off. Only available when Source = PL Calculated.' }),
-            labeled('Invert',        chk('io_strb_inv', d.strobe_invert),
-                { title: 'Invert the strobe active level/edge.' }),
-            grp('OPTO_OUT'),
-            labeled('Source',        sel('io_out_src', d.out_source,
-                ['Off', 'User value', 'Strobe', 'Exposure active', 'Status', 'Sync out', 'Trigger passthrough', 'PTP pulse'],
-                [false, false, false, off(d.cap_has_strobe), false, off(d.cap_has_xvs), false, d.cap_ptp_pulse !== 1]),
-                { title: 'What signal drives the OPTO_OUT pin. Exposure-active needs a native strobe and Sync-out needs XVS (those options grey out if the sensor lacks them). PTP pulse: a 1 ms pulse on every PTP second (the lock pulses of the FPGA time base), for checking sync between cameras on a scope; needs a bitstream with the PTP time base and the pin-13 wire, and the optocoupler adds microseconds of delay.' }),
+                { title: 'Minimum on-time: a shorter pulse is stretched to it. 0 to 655350 us in 10 us steps, 0 = off. Only with Source = PL generated.' }),
+            grp('Line1 (opto output)'),
+            labeled('Source',        sel('io_out_src', d.out_source, CAMIO_DEC.out_source,
+                [false, false, false, no(IOCAP.NATIVE_STROBE), false, no(IOCAP.SYNC_OUT), false, no(IOCAP.PTP_PULSE)]),
+                { title: 'What drives Line1 (LineSource). Exposure active: high while the sensor exposes. Sync out: this camera\'s frame start, for a camera that follows it by cable. Both need a sensor that outputs the signal and grey out otherwise. Trigger ready (FrameTriggerWait): high while the camera can take a trigger. PTP pulse: 1 ms high at every whole PTP second, for checking sync between cameras on a scope; offered only where this camera has PTP time, and the optocoupler adds a few microseconds of delay.' }),
             labeled('Invert',        chk('io_out_inv', d.out_invert),
-                { title: 'Invert the OPTO_OUT pad to match your opto-isolator. Applies to all sources.' }),
-            labeled('User value',    chk('io_out_uv', d.out_user_value),
-                { title: 'Manual OPTO_OUT level. Only available when Output Source = User value.' }),
+                { title: 'Invert Line1 (LineInverter) to match your opto-isolator. Applies to every source.' }),
+            labeled('User output',   chk('io_out_uv', d.out_user_value),
+                { title: 'Manual Line1 level (UserOutputValue). Only with Source = User output.' }),
             mkSave(() => ({
                 strobe_enable: cv('io_strb_en'), strobe_src: iv('io_strb_src'),
                 strobe_delay_us: iv('io_strb_delay'),
                 strobe_duration_us: iv('io_strb_dur'), strobe_minon_us: iv('io_strb_min'),
-                strobe_invert: cv('io_strb_inv'),
                 out_source: iv('io_out_src'), out_invert: cv('io_out_inv'), out_user_value: cv('io_out_uv'),
             })));
 
+        const srcNow = d.in_function === 1 ? (d.trig_src === 1 ? 2 : d.trig_src === 3 ? 5 : 1)
+                     : d.in_function === 2 ? 4
+                     : d.sync_enable ? 3 : 0;
         const inPanel = panel({ css: W },
             panelTitle('Aux Input Control'),
-            grp('Trigger input (OPTO_IN)'),
-            labeled('Function',      sel('io_in_func', d.in_function, ['Off', 'Hardware trigger', 'Sync in'],
-                [false, false, off(d.cap_has_xvs)]),
-                { title: 'OPTO_IN role: Off, Hardware trigger (drives the sensor), or Sync in (genlock to XVS). Sync in needs a sensor with XVS.' }),
+            grp('Frame timing'),
+            labeled('Sync source',   sel('io_src', srcNow,
+                ['Free run', 'Line0 trigger (opto in)', 'Software trigger', 'PTP sync (synchronous free run)', 'Genlock (Sync in)',
+                 'Action command (set by a GigE host)'],
+                [false, no(IOCAP.TRIGGER), no(IOCAP.SOFTWARE), no(IOCAP.PTP_SYNC), no(IOCAP.GENLOCK), true]),
+                { title: 'How frames are timed -- one source at a time, as on any GigE Vision / USB3 Vision camera. Free run: the sensor\'s own rate. Line0 trigger: each opto-input pulse starts an exposure; only on a sensor with a trigger input. Software trigger: a host command (TriggerSoftware) starts one. PTP sync: frames on a grid of PTP time, so every camera with the same rate exposes together; needs PTP mode on (Time Sync page) on every camera. Genlock: follow another camera over the cable (the other camera: Role Master, Line1 = Sync out); only on a sensor with a follower mode. Set the follower to the same resolution, binning, bit depth and frame rate as the master: slower gives no frames, faster gives wrong exposure times. Action command: set only by a GigE host.' }),
+            labeled('PTP sync rate', el('div', { class: 'input', style: 'display:inline-flex; align-items:center; gap:0.15rem; width:6rem;' },
+                el('input', { id: 'io_sync_rate', type: 'number', min: '0.01', max: '1000', step: '0.001',
+                    value: String((d.sync_rate_mhz || 30000) / 1000),
+                    style: 'border:none; background:transparent; outline:none; width:4rem; padding:0; text-align:right; color:inherit; font:inherit;' }),
+                el('span', { style: 'opacity:0.55; font-size:0.85em;' }, 'Hz')),
+                { title: 'Frame rate of the PTP grid, 0.01 to 1000 Hz. Give every camera the same rate: frames start at whole multiples of 1 / rate from PTP time 0, so they line up without a start time. A rate faster than the sensor can reach at its current settings is slowed to its maximum. Only with Sync source = PTP sync.' }),
+            grp('Line0 (opto input)'),
             labeled('Activation',    sel('io_in_act', d.in_activation, ['Rising edge', 'Falling edge', 'Any edge', 'Level']),
-                { title: 'Which edge / level of OPTO_IN fires the trigger. Only available when Function = Hardware trigger.' }),
+                { title: 'Which edge / level of Line0 fires the trigger. Only with Sync source = Line0 trigger.' }),
             labeled('Invert',        chk('io_in_inv', d.in_invert),
-                { title: 'Invert OPTO_IN polarity before edge detection. Only available when Function = Hardware trigger.' }),
-            labeled('Delay',         unum('io_trig_delay', d.trigger_delay_us),
-                { title: 'OPTO_IN edge to sensor trigger delay. 0 = immediate. Only available when Function = Hardware trigger.' }),
-            labeled('Divider',       num('io_trig_div', d.trigger_divider, 0, 65535),
-                { title: 'Fire once every N triggers (1 = every trigger). Only available when Function = Hardware trigger.' }),
-            grp('Sync / genlock'),
-            labeled('Role',          sel('io_role', d.sync_role, ['Off (free-run)', 'Master', 'Slave'],
-                [false, off(d.cap_xvs_out), off(d.cap_xvs_in)]),
-                { title: 'Genlock role: Master drives XVS/XHS to other cameras; Slave follows an external master; Off = free-run. Master needs a sensor that can drive XVS; Slave one that can receive it.' }),
-            labeled('Role select',   sel('io_roleby', d.sync_role_by, ['Pin (XMASTER)', 'I2C register']),
-                { title: 'Choose master/slave via the XMASTER pin or an I2C register. Only used when Role is Master or Slave.' }),
-            labeled('Trigger route', sel('io_trigroute', d.sync_trig_route, ['XTRIG pin', 'XVS slave', 'I2C register'],
-                [off(d.cap_has_xtrig), off(d.cap_xvs_in), false]),
-                { title: 'Which sensor input a trigger is routed to. Only used when Function = Hardware trigger; options grey out if the sensor lacks the pin (e.g. no XTRIG).' }),
-            mkSave(() => ({
-                in_function: iv('io_in_func'), in_activation: iv('io_in_act'), in_invert: cv('io_in_inv'),
-                trigger_delay_us: iv('io_trig_delay'), trigger_divider: iv('io_trig_div'),
-                sync_role: iv('io_role'), sync_role_by: iv('io_roleby'),
-                sync_trig_route: iv('io_trigroute'),
-            })));
+                { title: 'Invert Line0 before edge detection.' }),
+            labeled('Debounce',      unum('io_in_filter', d.in_filter_us, 1, 16777),
+                { title: 'Line0 must hold a new level this long before it counts (LineDebouncerTime), 0 to 16777 us. 0 = off. Not on every camera; greyed out where absent.' }),
+            labeled('Exposure = pulse', chk('io_width', d.width_mode),
+                { title: 'ExposureMode TriggerWidth: the exposure lasts as long as the Line0 pulse (plus the sensor\'s own few us). Off: ExposureTime. Only with Sync source = Line0 trigger.' }),
+            labeled('Delay',         unum('io_trig_delay', d.trigger_delay_us, 1),
+                { title: 'Trigger to exposure start, 0 to 655350 us in 1 us steps. 0 = immediate. Line0 and software triggers; PTP sync does not use it.' }),
+            labeled('Divider',       num('io_trig_div', d.trigger_divider || 1, 1, 255),
+                { title: 'Fire once every N triggers, 1 to 255 (1 = every trigger). Line0 and software triggers; PTP sync does not use it.' }),
+            grp('Sync out'),
+            labeled('Role',          sel('io_role', d.sync_role === 2 ? 0 : d.sync_role, ['Off', 'Master'],
+                [false, no(IOCAP.SYNC_OUT)]),
+                { title: 'Master: this camera makes the frame timing that genlock followers lock to; also set Line1 Source = Sync out and wire Line1 to each follower\'s Line0. Not with Genlock, and switched off when PTP sync drives this sensor. A follower is set with Sync source = Genlock.' }),
+            labeled('Sensor wiring', el('span', {},
+                'role: ' + camioLbl('role_by', d.sync_role_by) + '; trigger: ' + camioLbl('trig_route', d.sync_trig_route)),
+                { title: 'How the installed sensor is switched between master and follower, and where a trigger enters it. Fixed by the sensor board, not a setting.' }),
+            mkSave(() => {
+                const src = iv('io_src');
+                const hz  = parseFloat(($('#io_sync_rate') || {}).value || '0') || 0;
+                const body = {
+                    sync_rate_mhz: Math.round(hz * 1000),
+                    in_activation: iv('io_in_act'), in_invert: cv('io_in_inv'),
+                    in_filter_us: iv('io_in_filter'),
+                    trigger_delay_us: iv('io_trig_delay'), trigger_divider: iv('io_trig_div'),
+                    sync_role: src === 4 ? 2 : iv('io_role'),
+                };
+                if (src !== 5) Object.assign(body, {
+                    in_function: src === 1 || src === 2 ? 1 : src === 4 ? 2 : 0,
+                    trig_src: src === 2 ? 1 : 0,
+                    sync_enable: src === 3 ? 1 : 0,
+                    width_mode: src === 1 ? cv('io_width') : 0,
+                });
+                return body;
+            }));
 
         const statusPanel = panel({ css: W },
             panelTitle('Status'),
             el('div', { id: 'io_live' }));
 
         page.appendChild(el('div', { class: 'container', style: 'gap:0.6rem; align-items:flex-start; flex-wrap:wrap;' },
-            outPanel, inPanel, statusPanel));
+            inPanel, outPanel, statusPanel));
 
-        ['io_strb_src', 'io_role', 'io_in_func', 'io_out_src'].forEach((id) => {
+        ['io_strb_src', 'io_src', 'io_out_src'].forEach((id) => {
             const e = $('#' + id); if (e) e.addEventListener('change', applyModes);
         });
         applyModes();
@@ -3067,21 +3205,29 @@ const pageIosync = {
 
         const absent = d.present && d.block_present === 0;
         let stateTxt;
-        if (!d.live)         { stateTxt = 'camcfgd not reporting'; }
-        else if (absent)     { stateTxt = 'aux block not in this bitstream'; }
+        if (!d.live)         { stateTxt = 'camera service not reporting'; }
+        else if (absent)     { stateTxt = 'not available with the active bitstream'; }
         else if (!d.present) { stateTxt = 'not configured (disabled)'; }
         else                 { stateTxt = d.enable ? 'Active' : 'idle'; }
         const on = d.live && d.present && !absent;
 
         w.appendChild(labeled('State', el('span', {}, stateTxt)));
         w.appendChild(labeled('Enabled', el('span', {}, on ? (d.enable ? 'Yes' : 'No') : '-')));
-        w.appendChild(labeled('Trigger', el('span', {}, on ? camioLbl('in_function', d.in_function) : '-')));
+        w.appendChild(labeled('Sync source', el('span', {}, on ? camioLbl('sync_source', d.sync_source) : '-')));
+        if (on && d.sync_source === 4) {
+            const st = d.sched_status || 0;
+            const txt = (st & 4) ? 'Running' : (st & 32) ? 'Waiting for start'
+                      : (st & 16) ? 'Start refused (past)' : 'Stopped';
+            w.appendChild(labeled('PTP schedule', el('span', {},
+                txt + ((st & 512) ? ((st & 256) ? ', on PTP time' : ', not on PTP time') : ', time base free-running'))));
+        }
         w.appendChild(labeled('Strobe',  el('span', {}, on ? (d.strobe_enable ? 'On' : 'Off') : '-')));
         w.appendChild(labeled('Output',  el('span', {}, on ? camioLbl('out_source', d.out_source) : '-')));
         w.appendChild(labeled('Sync',    el('span', {}, on ? camioLbl('role', d.sync_role) : '-')));
         const lvl = (v, hi, lo) => (on && v === 1 ? hi : on && v === 0 ? lo : '-');
         w.appendChild(labeled('Sync lock', el('span', {}, lvl(d.st_locked, 'Locked', 'No lock'))));
-        w.appendChild(labeled('Input pin', el('span', {}, lvl(d.st_optoin, 'High', 'Low'))));
+        w.appendChild(labeled('Line0 (in)',  el('span', {}, lvl(d.st_optoin, 'High', 'Low'))));
+        w.appendChild(labeled('Line1 (out)', el('span', {}, on ? ((d.line_levels & 2) ? 'High' : 'Low') : '-')));
     },
 };
 
@@ -3119,18 +3265,19 @@ function ptpClockClass(c) {
 
 const pagePtp = {
     help: {
-        intro: 'PTP (IEEE 1588) synchronises the camera clock to a grandmaster on the network, so image timestamps from several cameras share one time base. GenICam applications switch it with PtpEnable; this page shows the clock state and holds the settings GenICam has no standard name for. PTP mode is not saved: it is off after every reboot.',
+        intro: 'PTP (IEEE 1588) synchronises the camera clock to a grandmaster on the network, so image timestamps from several cameras share one time base. GenICam applications switch it with PtpEnable; this page shows the clock state and holds the settings GenICam has no standard name for.',
         tips: [
             'The network needs a PTP grandmaster (a PC running ptp4l, a PTP switch, a GPS clock), or cameras with role Auto.',
             'All devices must be in the same network segment / VLAN and use the same domain and transport. A UDP device does not hear a Layer 2 device.',
             'UDP PTP uses multicast 224.0.1.129, ports 319 and 320, with TTL 1: it does not cross routers. Switches with IGMP snooping need an IGMP querier on the segment, or they drop it.',
             'PTP-aware switches (boundary or transparent clocks) give the best accuracy; an ordinary switch adds its queueing delay as noise.',
             'Locked means the PTP clock follows the master and image timestamps are PTP time. Locking: the PTP clock is locked and the image timestamp clock is still settling (a few seconds).',
-            'Saving settings while PTP is on restarts PTP: the lock is lost for about 10 to 20 seconds.',
-            'Role Auto lets the camera become master when no better clock is present (lowest priority, then lowest clock ID wins). Slave only is the default.',
+            'Role Auto lets the camera become master when no better clock is present. The election compares Priority first (lower wins), then clock quality, then the clock ID (lower wins). Slave only is the default.',
+            'With Timestamp hardware = Ethernet controller (a camera without PHY timestamps), PTP always runs over Layer 2, whatever Transport says, and GigE Vision PTP (PtpEnable) is not available.',
         ],
     },
     refreshMs: 1000,
+    _base: null,
     async render() {
         const page = $('#page');
         page.innerHTML = '';
@@ -3139,15 +3286,17 @@ const pagePtp = {
 
         const W = 'width: 23rem;';
         const grp = (t) => el('div', { class: 'label', style: 'font-weight:600; margin:0.5rem 0 0.1rem;' }, t);
-        const sel = (id, val, opts) => {
-            const sEl = el('select', { class: 'input', id, style: 'width:11.5rem;' });
-            opts.forEach(([v, t]) => sEl.appendChild(el('option',
-                Object.assign({ value: String(v) }, v === val ? { selected: 'selected' } : {}), t)));
-            return sEl;
-        };
-        const num = (id, val, min, max) => el('input', { class: 'input', id, type: 'number',
-            min: String(min), max: String(max), step: '1', value: String(val === undefined ? 0 : val), style: 'width:6rem;' });
-        const iv = (id) => parseInt(($('#' + id) || {}).value || '0', 10);
+        const sel = (id, opts) => el('select', { class: 'input', id, style: 'width:11.5rem;' },
+            ...opts.map(([v, t]) => el('option', { value: String(v) }, t)));
+        const num = (id, min, max) => el('input', { class: 'input', id, type: 'number',
+            min: String(min), max: String(max), step: '1', style: 'width:6rem;' });
+
+        const statusPanel = panel({ css: 'width: 30rem;' },
+            panelTitle('PTP - Status'),
+            el('div', { class: 'kvgrid kv-right', id: 'ptp_live' }),
+            el('div', { style: 'font-weight:600; border-top: 1px solid #eee; padding-top: 0.5rem; margin-top: 0.25rem;' },
+                'Diagnostics'),
+            el('div', { class: 'kvgrid kv-right', id: 'ptp_diag' }));
 
         const sw = el('input', Object.assign({ id: 'ptp_enable', type: 'checkbox', class: 'toggle' },
             d.enable ? { checked: 'checked' } : {},
@@ -3162,134 +3311,143 @@ const pagePtp = {
                 toast('PTP switch failed: ' + (e && e.message ? e.message : e), 'error');
             } finally { sw.disabled = false; this.refresh(); }
         });
-        const hw = d.clock_kind === 1 ? 'PHY'
-                 : d.clock_kind === 2 ? 'Zynq GEM'
-                 : 'none';
-        const modePanel = panel({ css: W },
-            panelTitle('PTP Mode'),
-            labeled('PTP mode', sw,
-                { title: 'Switch PTP on or off until the next reboot. GenICam PtpEnable switches the same state.' }),
-            labeled('State', el('span', { id: 'ptp_state' }, '-')),
-            labeled('Timestamp hardware', el('span', {}, hw),
-                { title: 'Which clock takes the PTP packet timestamps.' }),
-            labeled('GigE Vision PTP', el('span', {}, d.supported ? 'available (PtpEnable)' : 'not available'),
-                { title: 'GigE Vision capability bit 12. Needs the PHY timestamps, which handle UDP.' }),
-            el('div', { style: 'color:#666; font-size:0.9em; margin-top:0.4rem;' },
-                'Not saved: PTP is off after every reboot.'));
-
-        const adv = [
-            grp('Advanced'),
-            labeled('Delay mode', sel('ptp_delay', d.delay_mechanism, [[0, 'E2E (request-response)'], [1, 'P2P (peer delay)']]),
-                { title: 'E2E is the GigE Vision default. P2P needs every switch on the path to support peer delay.' }),
-            labeled('Sync interval as master', sel('ptp_sync', d.log_sync_interval, PTP_SYNC_INTERVALS),
-                { title: 'How often this camera sends Sync when it is master (role Auto only).' }),
-            labeled('DSCP', num('ptp_dscp', d.dscp, 0, 63),
-                { title: 'DSCP value of PTP packets (UDP transport), for networks with QoS. 0 = default.' }),
-        ];
         const saveBtn = el('button', { class: 'button' }, icon('save'), 'Save');
-        saveBtn.addEventListener('click', async () => {
-            const body = {
-                transport: iv('ptp_transport'), domain: iv('ptp_domain'),
-                role: iv('ptp_role'), priority1: iv('ptp_priority'),
-                delay_mechanism: iv('ptp_delay'), log_sync_interval: iv('ptp_sync'), dscp: iv('ptp_dscp'),
-            };
-            if (isNaN(body.domain) || body.domain < 0 || body.domain > 127) { toast('Domain must be 0 to 127', 'error'); return; }
-            if (isNaN(body.priority1) || body.priority1 < 0 || body.priority1 > 255) { toast('Priority must be 0 to 255', 'error'); return; }
-            if (isNaN(body.dscp) || body.dscp < 0 || body.dscp > 63) { toast('DSCP must be 0 to 63', 'error'); return; }
-            saveBtn.disabled = true;
-            try {
-                await apiPost('/api/ptp', body);
-                toast(($('#ptp_enable') || {}).checked ? 'PTP settings saved, PTP restarting' : 'PTP settings saved', 'ok');
-            } catch (e) { toast('Save failed: ' + (e && e.message ? e.message : e), 'error'); }
-            finally { saveBtn.disabled = false; }
-        });
+        saveBtn.addEventListener('click', () => this._save(saveBtn));
         const setPanel = panel({ css: W },
-            panelTitle('Settings'),
-            labeled('Transport', sel('ptp_transport', d.transport, [[0, 'UDP/IPv4'], [1, 'Layer 2']]),
-                { title: 'UDP/IPv4 is the GigE Vision default. Every device in the PTP network must use the same transport.' }),
-            labeled('Domain', num('ptp_domain', d.domain, 0, 127),
+            panelTitle('PTP - Settings'),
+            labeled('PTP mode', sw,
+                { title: 'Switch PTP on or off. GenICam PtpEnable switches the same state. Greyed out when the camera has no PTP timestamp hardware.' }),
+            el('div', { style: 'color:#666; font-size:0.9em; margin-top:0.4rem;' },
+                'PTP is off after every boot, enabled over the web or GigE interface.'),
+            labeled('Transport', sel('ptp_transport', [[0, 'UDP/IPv4'], [1, 'Layer 2']]),
+                { title: 'UDP/IPv4 is the GigE Vision default. Every device in the PTP network must use the same transport. With Timestamp hardware = Ethernet controller, PTP runs over Layer 2 whatever is set here.' }),
+            labeled('Domain', num('ptp_domain', 0, 127),
                 { title: 'PTP domain number, 0 to 127. Devices only synchronise within one domain.' }),
             grp('Master election'),
-            labeled('Role', sel('ptp_role', d.role, [[0, 'Slave only'], [1, 'Auto']]),
+            labeled('Role', sel('ptp_role', [[0, 'Slave only'], [1, 'Auto']]),
                 { title: 'Slave only: never becomes master. Auto: can become master when no better clock is present.' }),
-            labeled('Priority', num('ptp_priority', d.priority1, 0, 255),
-                { title: 'priority1 for the election (role Auto): lower wins. Default 128.' }),
-            ...adv,
+            labeled('Priority', num('ptp_priority', 0, 255),
+                { title: 'Priority 1 for the master election (role Auto), 0 to 255: lower wins. Default 128.' }),
+            grp('Advanced'),
+            labeled('Delay mode', sel('ptp_delay', [[0, 'E2E (request-response)'], [1, 'P2P (peer delay)']]),
+                { title: 'E2E is the GigE Vision default. P2P needs every switch on the path to support peer delay.' }),
+            labeled('Sync interval as master', sel('ptp_sync', PTP_SYNC_INTERVALS),
+                { title: 'How often this camera sends Sync when it is master (role Auto only), 0.125 s to 2 s. Default 1 s.' }),
+            labeled('DSCP', num('ptp_dscp', 0, 63),
+                { title: 'DSCP value of PTP packets (UDP transport only), for networks with QoS, 0 to 63. 0 = default.' }),
             el('div', { style: 'color:#666; font-size:0.9em; margin-top:0.4rem;' },
                 'Saving while PTP is on restarts it: the lock is lost for about 10 to 20 s.'),
             el('div', { class: 'labeled', style: 'justify-content:end; margin-top:0.5rem;' }, saveBtn));
 
-        const statusPanel = panel({ css: W }, panelTitle('Clock Status'), el('div', { id: 'ptp_live' }));
-        const diagPanel = panel({ css: W }, panelTitle('Diagnostics'), el('div', { id: 'ptp_diag' }));
-
         page.appendChild(el('div', { class: 'container ptp-page', style: 'gap:0.6rem; align-items:flex-start; flex-wrap:wrap;' },
-            setPanel, statusPanel, modePanel, diagPanel));
+            setPanel, statusPanel));
+        this._fill(d);
         this._paintLive(d);
     },
     async refresh() {
         try { this._paintLive(await apiGet('/api/ptp')); } catch (_) {}
     },
+    _fill(d) {
+        d = d || {};
+        this._base = d;
+        const set = (id, v, dflt) => { const e = $('#' + id); if (e) e.value = String(v == null ? dflt : v); };
+        set('ptp_transport', d.transport, 0);
+        set('ptp_domain', d.domain, 0);
+        set('ptp_role', d.role, 0);
+        set('ptp_priority', d.priority1, 128);
+        set('ptp_delay', d.delay_mechanism, 0);
+        set('ptp_sync', d.log_sync_interval, 0);
+        set('ptp_dscp', d.dscp, 0);
+    },
+    async _save(btn) {
+        const iv = (id) => parseInt(($('#' + id) || {}).value, 10);
+        const want = {
+            transport: iv('ptp_transport'), domain: iv('ptp_domain'),
+            role: iv('ptp_role'), priority1: iv('ptp_priority'),
+            delay_mechanism: iv('ptp_delay'), log_sync_interval: iv('ptp_sync'), dscp: iv('ptp_dscp'),
+        };
+        if (isNaN(want.domain) || want.domain < 0 || want.domain > 127) { toast('Domain must be 0 to 127', 'error'); return; }
+        if (isNaN(want.priority1) || want.priority1 < 0 || want.priority1 > 255) { toast('Priority must be 0 to 255', 'error'); return; }
+        if (isNaN(want.dscp) || want.dscp < 0 || want.dscp > 63) { toast('DSCP must be 0 to 63', 'error'); return; }
+        const base = this._base || {}, body = {};
+        for (const k of Object.keys(want))
+            if (want[k] !== base[k]) body[k] = want[k];
+        if (!Object.keys(body).length) { toast('Nothing changed', 'ok'); return; }
+        btn.disabled = true;
+        try {
+            await apiPost('/api/ptp', body);
+            toast(($('#ptp_enable') || {}).checked ? 'PTP settings saved, PTP restarting' : 'PTP settings saved', 'ok');
+        } catch (e) { toast('Save failed: ' + (e && e.message ? e.message : e), 'error'); }
+        finally { btn.disabled = false; }
+        try { this._fill(await apiGet('/api/ptp')); } catch (_) {}
+    },
     _paintLive(d) {
         d = d || {};
-        const st = $('#ptp_state');
-        let state;
-        if (d.apply_state === 1)        state = d.enabled ? 'Applying (starting PTP)' : 'Applying (stopping PTP)';
-        else if (!d.enabled)            state = 'Off';
-        else if (!d.running)            state = 'Starting (ptp4l not answering yet)';
-        else if (d.servo === 1)         state = 'Locked (' + (PTP_PORT_STATES[d.port_state] || '?') + ')';
-        else if (d.servo === 2)         state = 'Locking (image clock settling)';
-        else                            state = 'Not locked (' + (PTP_PORT_STATES[d.port_state] || '?') + ')';
-        if (d.apply_state === 2)        state += ' - last change failed, see System Log';
-        if (st) st.textContent = state;
         const sw = $('#ptp_enable');
         if (sw && !sw.disabled && document.activeElement !== sw) sw.checked = !!d.enabled;
 
-        const w = $('#ptp_live');
-        if (w) {
-            w.innerHTML = '';
-            const on = d.enabled && d.running;
-            const row = (l, v, t) => w.appendChild(labeled(l, el('span', {}, v), t ? { title: t } : undefined));
-            row('Port state', d.enabled ? (PTP_PORT_STATES[d.port_state] || '?') : 'Disabled');
-            row('PTP clock', on ? (d.port_state === 9 || d.port_state === 6 ? 'locked' : 'not locked') : '-',
-                'The PTP hardware clock that ptp4l steers.');
-            row('Image timestamp clock', !on ? '-' : d.follow_state < 0 ? 'follows the PTP clock'
-                : d.follow_state === 2 ? 'locked (' + ptpNs(d.follow_offset_ns) + ')' : 'settling',
-                'The clock that stamps GigE frames, kept on the PTP clock by the driver.');
-            const slave = on && d.port_state === 9;
-            row('Offset from master', slave ? ptpNs(d.offset_ns) : '-');
-            row('Mean path delay', slave ? ptpNs(d.mean_path_delay_ns) : '-');
-            row('Grandmaster', on ? d.gm_id : '-');
-            row('GM class / accuracy', on ? ptpClockClass(d.gm_clock_class) + ', ' + ptpAccuracy(d.gm_clock_accuracy) : '-');
-            row('Parent', on ? d.parent_id + ' port ' + d.parent_port : '-');
-            row('This clock', on ? d.clock_id : '-');
-            let t = '-', off = '-';
-            if (on && d.ptp_time_sec) {
-                const utcOff = d.utc_offset_valid ? d.utc_offset : 37;
-                const utc = new Date((d.ptp_time_sec - utcOff) * 1000);
-                t = utc.toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
-                off = utcOff + ' s' + (d.utc_offset_valid ? '' : ' (assumed)');
+        const w = $('#ptp_live'), wd = $('#ptp_diag');
+        if (!w || !wd) return;
+        let rows = [];
+        const row = (l, v, t) => rows.push([l, v, t]);
+        const paint = (grid) => {
+            grid.innerHTML = '';
+            for (const [l, v, t] of rows) {
+                grid.appendChild(el('div', { class: 'kvk', title: t || null }, l + ':'));
+                grid.appendChild(el('div', { class: 'kvv', title: t || null }, String(v)));
             }
-            row('PTP time', t, 'PTP time (TAI) shown as UTC.');
-            row('UTC offset', off, 'TAI minus UTC. "assumed": the grandmaster does not send a valid offset, so 37 s is used.');
-            row('Locked for', on ? ptpDuration(d.locked_for_s) : '-');
-            row('Lock losses', d.lock_losses !== undefined ? String(d.lock_losses) : '-', 'Since boot.');
-        }
+            rows = [];
+        };
+        const on = d.enabled && d.running;
+        const port = PTP_PORT_STATES[d.port_state] || '?';
+        const master = on && d.port_state === 6, slave = on && d.port_state === 9;
+        const heardGm = on && !!d.gm_id && d.gm_id !== d.clock_id;
+        const pair = (a, b) => (on ? (a || 0) + ' / ' + (b || 0) : '-');
 
-        const g = $('#ptp_diag');
-        if (g) {
-            g.innerHTML = '';
-            const row = (l, v) => g.appendChild(labeled(l, el('span', {}, v)));
-            row('PTP mode on for', d.enabled ? ptpDuration(d.enabled_for_s) : '-');
-            row('Last ptp4l answer', d.enabled && d.running ? d.sample_age_ms + ' ms ago' : '-');
-            row('Transport in use', d.transport_in_use === 1 ? 'Layer 2' : 'UDP/IPv4');
-            row('Steps removed', String(d.steps_removed || 0));
-            row('Received Sync / Follow_Up', (d.rx_sync || 0) + ' / ' + (d.rx_follow_up || 0));
-            row('Received Announce', String(d.rx_announce || 0));
-            row('Delay_Req sent / Resp', (d.tx_delay_req || 0) + ' / ' + (d.rx_delay_resp || 0));
-            row('Pdelay_Req sent / Resp', (d.tx_pdelay_req || 0) + ' / ' + (d.rx_pdelay_resp || 0));
-            row('Sync / Announce sent', (d.tx_sync || 0) + ' / ' + (d.tx_announce || 0));
-            row('Own clock class', ptpClockClass(d.clock_class));
+        let state;
+        if (d.apply_state === 1)        state = d.enabled ? 'Applying (starting PTP)' : 'Applying (stopping PTP)';
+        else if (!d.enabled)            state = 'Off';
+        else if (!d.running)            state = d.sample_age_ms ? 'PTP service not answering for ' + ptpDuration(Math.ceil(d.sample_age_ms / 1000))
+                                                                : 'Starting';
+        else if (d.servo === 1)         state = 'Locked (' + port + ')' + (d.locked_for_s ? ' for ' + ptpDuration(d.locked_for_s) : '');
+        else if (d.servo === 2)         state = 'Locking (image clock settling)';
+        else                            state = 'Not locked (' + port + ')' + (d.enabled_for_s ? ', PTP on for ' + ptpDuration(d.enabled_for_s) : '');
+        if (d.apply_state === 2)        state += ' - last change failed, see System Log';
+        row('State', state);
+        row('Offset from master', slave ? ptpNs(d.offset_ns) : '-');
+        row('Mean path delay', slave ? ptpNs(d.mean_path_delay_ns) : '-');
+        row('Grandmaster Clock ID', heardGm ? d.gm_id + (d.parent_id && d.parent_id !== d.gm_id
+                ? ' via ' + d.parent_id + ' port ' + d.parent_port + ' (' + d.steps_removed + ' steps)' : '')
+            : master ? 'this camera' : '-',
+            'The clock the whole domain follows. "via": the boundary clock this camera syncs to, and the hops to the grandmaster.');
+        let t = '-';
+        if (on && d.ptp_time_sec) {
+            const utcOff = d.utc_offset_valid ? d.utc_offset : 37;
+            const utc = new Date((d.ptp_time_sec - utcOff) * 1000);
+            t = utc.toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC')
+                + ' (offset ' + utcOff + ' s' + (d.utc_offset_valid ? ')' : ', assumed)');
         }
+        row('PTP time', t,
+            'PTP time (TAI) shown as UTC; the offset is TAI minus UTC. "assumed": the grandmaster does not send a valid offset, so 37 s is used.');
+        row('Lock losses', String(d.lock_losses || 0), 'Since boot.');
+        paint(w);
+
+        const hw = d.clock_kind === 1 ? 'Ethernet PHY' : d.clock_kind === 2 ? 'Ethernet controller' : 'none';
+        row('Timestamp hardware', hw + (d.supported ? ' (GigE Vision PtpEnable)' : ' (no GigE Vision PTP)'),
+            'Where PTP packets are timestamped. The Ethernet PHY handles UDP and Layer 2 and is needed for GigE Vision PTP (PtpEnable); the Ethernet controller handles Layer 2 only. None: PTP mode cannot be switched on.');
+        row('Our Clock ID', on ? d.clock_id : '-', 'This camera\'s own PTP clock identity.');
+        row('Image clock offset', !on || d.follow_state < 0 ? '-'
+            : d.follow_state === 2 ? ptpNs(d.follow_offset_ns) : 'settling',
+            'How far the clock that timestamps GigE frames is from the PTP clock; the camera keeps it on the PTP clock.');
+        row('GM class / accuracy', heardGm || master
+            ? ptpClockClass(d.gm_clock_class) + ', ' + ptpAccuracy(d.gm_clock_accuracy) : '-');
+        row('Received Sync / Follow_Up', pair(d.rx_sync, d.rx_follow_up));
+        row('Received Announce', on ? String(d.rx_announce || 0) : '-');
+        row('Delay requests sent / answered', d.delay_mechanism === 1
+            ? pair(d.tx_pdelay_req, d.rx_pdelay_resp) : pair(d.tx_delay_req, d.rx_delay_resp),
+            'Delay_Req / Delay_Resp with E2E, Pdelay_Req / Pdelay_Resp with P2P (the Delay mode setting).');
+        row('Sync / Announce sent', pair(d.tx_sync, d.tx_announce), 'Only a master sends them (role Auto).');
+        paint(wd);
     },
 };
 

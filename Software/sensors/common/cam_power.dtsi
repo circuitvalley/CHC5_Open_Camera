@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: CC-BY-NC-ND-4.0
+/*
+ * cam_power.dtsi - CHC5 camera board: module power and sensor reset (XCLR)
+ *
+ * Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+ * https://creativecommons.org/licenses/by-nc-nd/4.0/
+ */
+#ifndef CHC5_CAM_POWER_DTSI
+#define CHC5_CAM_POWER_DTSI
+
+#ifdef CHC5_CAM_EMIO
+
+#define CHC5_GPIO_ACTIVE_HIGH	0
+#define CHC5_GPIO_ACTIVE_LOW	1
+#define CHC5_EMIO_CAM_RESET	54
+#define CHC5_EMIO_CAM_ENABLE	55
+
+cam_power: regulator-cam-power {
+	compatible = "regulator-fixed";
+	regulator-name = "cam_power";
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+	gpio = <&gpio0 CHC5_EMIO_CAM_ENABLE CHC5_GPIO_ACTIVE_HIGH>;
+	enable-active-high;
+	startup-delay-us = <200000>;
+	regulator-always-on;
+};
+
+#define CHC5_CAM_VIN		vin-supply = <&cam_power>;
+
+#define CHC5_CAM_RESET_XCLR	reset-gpios = <&gpio0 CHC5_EMIO_CAM_RESET CHC5_GPIO_ACTIVE_LOW>;
+#define CHC5_CAM_RESET_RESETB	reset-gpios = <&gpio0 CHC5_EMIO_CAM_RESET CHC5_GPIO_ACTIVE_HIGH>;
+
+#else
+
+#define CHC5_CAM_VIN
+#define CHC5_CAM_RESET_XCLR
+#define CHC5_CAM_RESET_RESETB
+
+#endif
+#endif

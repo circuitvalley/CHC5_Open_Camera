@@ -19,6 +19,7 @@ proc checkRequiredFiles { origin_dir} {
  "[file normalize "$origin_dir/src/hdl/pixel_packer_core.v"]"\
  "[file normalize "$origin_dir/src/hdl/pixel_packer_mux.v"]"\
  "[file normalize "$origin_dir/src/hdl/pixel_packer.v"]"\
+ "[file normalize "$origin_dir/src/hdl/chc5_eof_fsync.v"]"\
  "[file normalize "$origin_dir/src/hdl/axis_raw_truncate.v"]"\
  "[file normalize "$origin_dir/src/hdl/camio_sync_axil_regs.v"]"\
  "[file normalize "$origin_dir/src/hdl/camio_sync_core.v"]"\
@@ -174,6 +175,7 @@ set files [list \
  [file normalize "${origin_dir}/src/hdl/pixel_packer_core.v"] \
  [file normalize "${origin_dir}/src/hdl/pixel_packer_mux.v"] \
  [file normalize "${origin_dir}/src/hdl/pixel_packer.v"] \
+ [file normalize "${origin_dir}/src/hdl/chc5_eof_fsync.v"] \
  [file normalize "${origin_dir}/src/hdl/axis_raw_truncate.v"] \
  [file normalize "${origin_dir}/src/hdl/camio_sync_axil_regs.v"] \
  [file normalize "${origin_dir}/src/hdl/camio_sync_core.v"] \
@@ -248,6 +250,9 @@ if { [get_files [list pixel_packer_mux.v]] == "" } {
 if { [get_files [list pixel_packer.v]] == "" } {
   import_files -quiet -fileset sources_1 ${::origin_dir}/src/hdl/pixel_packer.v
 }
+if { [get_files [list chc5_eof_fsync.v]] == "" } {
+  import_files -quiet -fileset sources_1 ${::origin_dir}/src/hdl/chc5_eof_fsync.v
+}
 if { [get_files [list pixel_packer_axilite.v]] == "" } {
   import_files -quiet -fileset sources_1 ${::origin_dir}/src/hdl/pixel_packer_axilite.v
 }
@@ -259,6 +264,9 @@ if { [get_files [list pixel_packer_mux.v]] == "" } {
 }
 if { [get_files [list pixel_packer.v]] == "" } {
   import_files -quiet -fileset sources_1 ${::origin_dir}/src/hdl/pixel_packer.v
+}
+if { [get_files [list chc5_eof_fsync.v]] == "" } {
+  import_files -quiet -fileset sources_1 ${::origin_dir}/src/hdl/chc5_eof_fsync.v
 }
 if { [get_files [list axis_raw_truncate.v]] == "" } {
   import_files -quiet -fileset sources_1 ${::origin_dir}/src/hdl/axis_raw_truncate.v
@@ -358,6 +366,7 @@ proc cr_bd_design_1 { parentCell } {
   axis_rgb_truncate\
   axis_black_level_corrector_v1_0\
   pixel_packer\
+  chc5_eof_fsync\
   pixel_packer\
   axis_raw_truncate\
   chc5_axis_crop\
@@ -431,6 +440,7 @@ proc cr_bd_design_1 { parentCell } {
   set xhs_0 [ create_bd_port -dir IO xhs_0 ]
   set xvs_0 [ create_bd_port -dir IO xvs_0 ]
   set native_strobe_in_0 [ create_bd_port -dir I native_strobe_in_0 ]
+  set ptp_evt_0 [ create_bd_port -dir O ptp_evt_0 ]
 
   set processing_system7_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:processing_system7:5.5 processing_system7_0 ]
   set_property -dict [list \
@@ -585,8 +595,8 @@ proc cr_bd_design_1 { parentCell } {
     CONFIG.PCW_GP1_NUM_WRITE_THREADS {4} \
     CONFIG.PCW_GPIO_BASEADDR {0xE000A000} \
     CONFIG.PCW_GPIO_EMIO_GPIO_ENABLE {1} \
-    CONFIG.PCW_GPIO_EMIO_GPIO_IO {4} \
-    CONFIG.PCW_GPIO_EMIO_GPIO_WIDTH {4} \
+    CONFIG.PCW_GPIO_EMIO_GPIO_IO {6} \
+    CONFIG.PCW_GPIO_EMIO_GPIO_WIDTH {6} \
     CONFIG.PCW_GPIO_HIGHADDR {0xE000AFFF} \
     CONFIG.PCW_GPIO_MIO_GPIO_ENABLE {1} \
     CONFIG.PCW_GPIO_MIO_GPIO_IO {MIO} \
@@ -1133,10 +1143,21 @@ proc cr_bd_design_1 { parentCell } {
   set_property -dict [list \
     CONFIG.c_include_mm2s {0} \
     CONFIG.c_num_fstores {5} \
+    CONFIG.c_use_s2mm_fsync {1} \
     CONFIG.c_s2mm_genlock_mode {0} \
     CONFIG.c_s2mm_linebuffer_depth {512} \
     CONFIG.c_s2mm_max_burst_length {8} \
   ] $axi_vdma_1
+
+  set block_name chc5_eof_fsync
+  set block_cell_name chc5_eof_fsync_0
+  if { [catch {set chc5_eof_fsync_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
+     catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
+     return 1
+   } elseif { $chc5_eof_fsync_0 eq "" } {
+     catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
+     return 1
+   }
 
   set smartconnect_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_1 ]
   set_property CONFIG.NUM_SI {1} $smartconnect_1
@@ -1278,7 +1299,7 @@ proc cr_bd_design_1 { parentCell } {
   set smartconnect_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_2 ]
   set_property -dict [list \
     CONFIG.NUM_CLKS {1} \
-    CONFIG.NUM_MI {6} \
+    CONFIG.NUM_MI {7} \
     CONFIG.NUM_SI {1} \
   ] $smartconnect_2
 
@@ -1360,9 +1381,6 @@ proc cr_bd_design_1 { parentCell } {
     CONFIG.TID_WIDTH {0} \
   ] $axis_broadcaster_1
 
-  set xlconstant_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 xlconstant_3 ]
-  set_property CONFIG.CONST_VAL {1} $xlconstant_3
-
   set rst_dphy_200M [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_dphy_200M ]
 
   set mipi_csi2_rx_subsyst_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:mipi_csi2_rx_subsystem:6.0 mipi_csi2_rx_subsyst_0 ]
@@ -1440,32 +1458,46 @@ proc cr_bd_design_1 { parentCell } {
     CONFIG.TUSER_REMAP {tuser[0:0]} \
   ] $yuv_pack
 
-  set xlslice_rst_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 xlslice_rst_0 ]
+  set cam_reset_slice [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 cam_reset_slice ]
   set_property -dict [list \
     CONFIG.DIN_FROM {0} \
     CONFIG.DIN_TO {0} \
-    CONFIG.DIN_WIDTH {4} \
+    CONFIG.DIN_WIDTH {6} \
+  ] $cam_reset_slice
+
+  set cam_enable_slice [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 cam_enable_slice ]
+  set_property -dict [list \
+    CONFIG.DIN_FROM {1} \
+    CONFIG.DIN_TO {1} \
+    CONFIG.DIN_WIDTH {6} \
+  ] $cam_enable_slice
+
+  set xlslice_rst_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 xlslice_rst_0 ]
+  set_property -dict [list \
+    CONFIG.DIN_FROM {2} \
+    CONFIG.DIN_TO {2} \
+    CONFIG.DIN_WIDTH {6} \
   ] $xlslice_rst_0
 
   set xlslice_rst_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 xlslice_rst_1 ]
   set_property -dict [list \
-    CONFIG.DIN_FROM {1} \
-    CONFIG.DIN_TO {1} \
-    CONFIG.DIN_WIDTH {4} \
+    CONFIG.DIN_FROM {3} \
+    CONFIG.DIN_TO {3} \
+    CONFIG.DIN_WIDTH {6} \
   ] $xlslice_rst_1
 
   set xlslice_rst_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 xlslice_rst_2 ]
   set_property -dict [list \
-    CONFIG.DIN_FROM {2} \
-    CONFIG.DIN_TO {2} \
-    CONFIG.DIN_WIDTH {4} \
+    CONFIG.DIN_FROM {4} \
+    CONFIG.DIN_TO {4} \
+    CONFIG.DIN_WIDTH {6} \
   ] $xlslice_rst_2
 
   set xlslice_rst_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 xlslice_rst_3 ]
   set_property -dict [list \
-    CONFIG.DIN_FROM {3} \
-    CONFIG.DIN_TO {3} \
-    CONFIG.DIN_WIDTH {4} \
+    CONFIG.DIN_FROM {5} \
+    CONFIG.DIN_TO {5} \
+    CONFIG.DIN_WIDTH {6} \
   ] $xlslice_rst_3
 
   set block_name chc5_csc_yuv2rgb
@@ -1504,7 +1536,9 @@ proc cr_bd_design_1 { parentCell } {
   connect_bd_intf_net -intf_net mipi_csi2_rx_subsyst_0_video_out [get_bd_intf_pins mipi_csi2_rx_subsyst_0/video_out] [get_bd_intf_pins chc5_axis_crop_0/S_AXIS]
   connect_bd_intf_net -intf_net chc5_axis_crop_0_M_AXIS [get_bd_intf_pins chc5_axis_crop_0/M_AXIS] [get_bd_intf_pins axis_black_level_cor_0/s_axis_video]
   connect_bd_intf_net -intf_net mipi_phy_if_0_1 [get_bd_intf_ports mipi_phy_if_0] [get_bd_intf_pins mipi_csi2_rx_subsyst_0/mipi_phy_if]
-  connect_bd_intf_net -intf_net pixel_packer_0_m_axis [get_bd_intf_pins pixel_packer_0/m_axis] [get_bd_intf_pins axi_vdma_1/S_AXIS_S2MM]
+  connect_bd_intf_net -intf_net pixel_packer_0_m_axis [get_bd_intf_pins pixel_packer_0/m_axis] [get_bd_intf_pins chc5_eof_fsync_0/s_axis]
+  connect_bd_intf_net -intf_net chc5_eof_fsync_0_m_axis [get_bd_intf_pins chc5_eof_fsync_0/m_axis] [get_bd_intf_pins axi_vdma_1/S_AXIS_S2MM]
+  connect_bd_intf_net -intf_net smartconnect_2_M06_AXI [get_bd_intf_pins smartconnect_2/M06_AXI] [get_bd_intf_pins chc5_eof_fsync_0/s_axi]
   connect_bd_intf_net -intf_net pixel_packer_1_m_axis [get_bd_intf_pins pixel_packer_1/m_axis] [get_bd_intf_pins axis_data_fifo_0/S_AXIS]
   connect_bd_intf_net -intf_net processing_system7_0_DDR [get_bd_intf_ports DDR] [get_bd_intf_pins processing_system7_0/DDR]
   connect_bd_intf_net -intf_net processing_system7_0_FIXED_IO [get_bd_intf_ports FIXED_IO] [get_bd_intf_pins processing_system7_0/FIXED_IO]
@@ -1533,6 +1567,8 @@ proc cr_bd_design_1 { parentCell } {
   connect_bd_intf_net -intf_net v_tc_0_vtiming_out [get_bd_intf_pins v_tc_0/vtiming_out] [get_bd_intf_pins v_axi4s_vid_out_0/vtiming_in]
   connect_bd_intf_net -intf_net yuv_pack_M_AXIS [get_bd_intf_pins yuv_pack/M_AXIS] [get_bd_intf_pins axis_broadcaster_2/S_AXIS]
 
+  connect_bd_net -net chc5_camio_sync_io_0_ptp_evt  [get_bd_pins chc5_camio_sync_io_0/ptp_evt] \
+  [get_bd_ports ptp_evt_0]
   connect_bd_net -net Net  [get_bd_pins xlconstant_0/dout] \
   [get_bd_pins v_tc_0/clken] \
   [get_bd_pins v_axi4s_vid_out_0/aclken] \
@@ -1556,6 +1592,7 @@ proc cr_bd_design_1 { parentCell } {
   [get_bd_pins xlconcat_2/In0]
   connect_bd_net -net axi_vdma_0_s2mm_introut  [get_bd_pins axi_vdma_0/s2mm_introut] \
   [get_bd_pins xlconcat_2/In1]
+  connect_bd_net -net chc5_eof_fsync_0_fsync  [get_bd_pins chc5_eof_fsync_0/fsync] [get_bd_pins axi_vdma_1/s2mm_fsync]
   connect_bd_net -net axi_vdma_1_s2mm_introut  [get_bd_pins axi_vdma_1/s2mm_introut] \
   [get_bd_pins xlconcat_2/In3]
   connect_bd_net -net axis_dwidth_converter_0_m_axis_tdata  [get_bd_pins axis_dwidth_converter_0/m_axis_tdata] \
@@ -1592,6 +1629,7 @@ proc cr_bd_design_1 { parentCell } {
   [get_bd_pins axi_vdma_1/s_axi_lite_aclk] \
   [get_bd_pins axi_vdma_1/m_axi_s2mm_aclk] \
   [get_bd_pins axi_vdma_1/s_axis_s2mm_aclk] \
+  [get_bd_pins chc5_eof_fsync_0/aclk] \
   [get_bd_pins smartconnect_1/aclk] \
   [get_bd_pins axis_broadcaster_2/aclk] \
   [get_bd_pins processing_system7_0/M_AXI_GP1_ACLK] \
@@ -1641,6 +1679,8 @@ proc cr_bd_design_1 { parentCell } {
   [get_bd_pins rst_ps7_0_100M/ext_reset_in] \
   [get_bd_pins rst_ps7_0_100M1/ext_reset_in]
   connect_bd_net -net processing_system7_0_GPIO_O  [get_bd_pins processing_system7_0/GPIO_O] \
+  [get_bd_pins cam_reset_slice/Din] \
+  [get_bd_pins cam_enable_slice/Din] \
   [get_bd_pins xlslice_rst_0/Din] \
   [get_bd_pins xlslice_rst_1/Din] \
   [get_bd_pins xlslice_rst_2/Din] \
@@ -1652,6 +1692,7 @@ proc cr_bd_design_1 { parentCell } {
   [get_bd_pins axis_broadcaster_0/aresetn] \
   [get_bd_pins axis_data_fifo_0/s_axis_aresetn] \
   [get_bd_pins axi_vdma_1/axi_resetn] \
+  [get_bd_pins chc5_eof_fsync_0/aresetn] \
   [get_bd_pins smartconnect_1/aresetn] \
   [get_bd_pins axis_dwidth_converter_0/aresetn] \
   [get_bd_pins smartconnect_3/aresetn] \
@@ -1687,11 +1728,12 @@ proc cr_bd_design_1 { parentCell } {
   connect_bd_net -net xlconcat_2_dout  [get_bd_pins xlconcat_2/dout] \
   [get_bd_pins processing_system7_0/IRQ_F2P]
   connect_bd_net -net xlconstant_1_dout  [get_bd_pins xlconstant_1/dout] \
-  [get_bd_ports CAM_RESET] \
   [get_bd_pins xlconcat_2/In5]
   connect_bd_net -net xlconstant_2_dout  [get_bd_pins xlconstant_2/dout] \
   [get_bd_pins xlconcat_2/In4]
-  connect_bd_net -net xlconstant_3_dout  [get_bd_pins xlconstant_3/dout] \
+  connect_bd_net -net cam_reset_slice_Dout  [get_bd_pins cam_reset_slice/Dout] \
+  [get_bd_ports CAM_RESET]
+  connect_bd_net -net cam_enable_slice_Dout  [get_bd_pins cam_enable_slice/Dout] \
   [get_bd_ports CAM_ENABLE]
   connect_bd_net -net xlslice_0_Dout  [get_bd_pins xlslice_0/Dout] \
   [get_bd_pins axi_stream_to_video_1/s_axis_video_tuser]
@@ -1711,6 +1753,7 @@ proc cr_bd_design_1 { parentCell } {
   assign_bd_address -offset 0x40002000 -range 0x00001000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs chc5_axis_crop_0/S_AXI/reg0] -force
   assign_bd_address -offset 0x80002000 -range 0x00001000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs axis_video_subsample_0/S_AXI/reg0] -force
   assign_bd_address -offset 0x80003000 -range 0x00001000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs chc5_camio_sync_io_0/s_axi/reg0] -force
+  assign_bd_address -offset 0x80006000 -range 0x00001000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs chc5_eof_fsync_0/s_axi/reg0] -force
   assign_bd_address -offset 0x43C00000 -range 0x00001000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs mipi_csi2_rx_subsyst_0/csirxss_s_axi/Reg] -force
   assign_bd_address -offset 0x40000000 -range 0x00001000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs pixel_packer_0/s_axi/reg0] -force
   assign_bd_address -offset 0x80000000 -range 0x00001000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs pixel_packer_1/s_axi/reg0] -force

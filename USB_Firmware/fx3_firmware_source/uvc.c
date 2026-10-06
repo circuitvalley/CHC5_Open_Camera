@@ -38,15 +38,15 @@ uint8_t  bmReqType, bRequest;                           /* bmReqType and bReques
 uint16_t wValue, wIndex, wLength;                       /* wValue, wIndex and wLength fields. */
 
 CyU3PUSBSpeed_t usbSpeed = CY_U3P_NOT_CONNECTED;        /* Current USB connection speed. */
-CyBool_t        streamingStarted = CyFalse;             /* Whether USB host has started streaming data */
-CyBool_t        glIsApplnActive  = CyFalse;             /* When CLEAR_FEATURE (stop streaming) request is sent this variable is reset and set when start
-                                                           streaming request is sent by Host. This is used during commit buffer failure event. */
+
+CyBool_t        glIsApplnActive  = CyFalse;
 static CyBool_t glIsConfigured = CyFalse;               /* Whether Application is in configured state or not */
 
-/* Mac OS does not send EP Clear feature when the app is closed. It just stops issuing IN tokens. So buffer commit failures
- * can be counted and if it reaches beyond a limit, streaming can be stopped. Buffer commit failure code can be cleared
- * on DMA Consumer event so that the limit is not reached under streaming conditions.  */
+static volatile CyBool_t glPipeArmed = CyFalse;
+
 static uint8_t glCommitBufferFailureCount = 0;
+
+static volatile CyBool_t glLedHardStop = CyFalse;
 #if LED_STATUS_ENABLED
 static volatile CyBool_t glLedLinkDegraded = CyFalse;
 #define LED_THREAD_STACK     (0x0400)
@@ -54,31 +54,33 @@ static volatile CyBool_t glLedLinkDegraded = CyFalse;
 static CyU3PThread glLedThread;
 #endif
 
-
 /*Variable to track whether the reason for DMA Reset is Frame Timer overflow or Commit Buffer Failure*/
-static uint8_t glDmaResetFlag = CY_FX_UVC_DMA_RESET_EVENT_NOT_ACTIVE;
+static volatile uint8_t glDmaResetFlag = CY_FX_UVC_DMA_RESET_EVENT_NOT_ACTIVE;
 
 static uint8_t glUvcVcErrorCode = CY_FX_UVC_VC_ERROR_CODE_NO_ERROR;
 
-#ifdef FRAME_TIMER_ENABLE
+static volatile uint32_t glLastProdTimeMs = 0;
 
-/* Maximum frame transfer time in milli-seconds. The value is updated for every resolution and frame rate.
- * Note: The value should always be greater than the frame blanking period */
-uint16_t glFrameTimerPeriod = CY_FX_UVC_FRAME_TIMER_VAL_200MS;
+static CyBool_t glStopRetry   = CyFalse;
+static uint32_t glStopRetryMs = 0;
 
-/* Timer used to track frame transfer time. */
-static CyU3PTimer UvcTimer;
+static CyBool_t glStopAckPending = CyFalse;
+static uint8_t  glStopAckSeq     = 0;
+static uint32_t glStopAckSinceMs = 0;
+static uint32_t glStopAckPollMs  = 0;
+static uint32_t glStopAckSentMs  = 0;
+static CyBool_t glStartHeld      = CyFalse;
+static CyBool_t glStartAckPending   = CyFalse;
+static CyBool_t glStartAckWriteFail = CyFalse;
+static CyBool_t glStartAckRestart   = CyFalse;
+static uint8_t  glStartAckSeq       = 0;
+static uint32_t glStartAckSinceMs   = 0;
+static uint32_t glStartAckPollMs    = 0;
+static uint32_t glStartAckSentMs    = 0;
 
-/* Frame timer overflow call back function */
-static void CyFxUvcAppProgressTimer(uint32_t arg)
-{
-    if(glDmaResetFlag == CY_FX_UVC_DMA_RESET_EVENT_NOT_ACTIVE)
-    {
-        glDmaResetFlag = CY_FX_UVC_DMA_RESET_FRAME_TIMER_OVERFLOW;
-        CyU3PEventSet(&glFxUVCEvent, CY_FX_UVC_DMA_RESET_EVENT, CYU3P_EVENT_OR);
-    }
-}
-#endif
+static CyBool_t glMuxSelValue  = CyTrue;
+static CyBool_t glMuxRetryDone = CyFalse;
+static uint32_t glMuxRetryMs   = 0;
 
 #ifdef BACKFLOW_DETECT
 uint8_t back_flow_detected = 0;                         /* Whether buffer overflow error is detected. */
@@ -106,7 +108,7 @@ uint8_t glProbeCtrl[CY_FX_UVC_MAX_PROBE_SETTING] = {
                                    streaming with adjustable compression parameters */
     0x00, 0x00,                 /* Internal video streaming i/f latency in ms */
     DBVAL(MAX_FRAME_SIZE),     /* Max video frame size in bytes */
-    0x00, 0x80, 0x00, 0x00,      /* No. of bytes device can rx in single payload = 32 KB */
+    0x00, 0x80, 0x00, 0x00,
 
 #ifndef FX3_UVC_1_0_SUPPORT
     /* UVC 1.1 Probe Control has additional fields from UVC 1.0 */
@@ -117,29 +119,6 @@ uint8_t glProbeCtrl[CY_FX_UVC_MAX_PROBE_SETTING] = {
     0x00                                /* Maximum payload format version */
 #endif
 };
-
-typedef struct __attribute__((packed)) uvc_control_s
-{
-	uint16_t hint;
-	uint8_t format_index;
-	uint8_t frame_index;
-	uint32_t frame_interval;
-	uint16_t key_frame_rate;
-	uint16_t PFrame_rate;
-	uint16_t comp_quality;
-	uint16_t comp_win_size;
-	uint16_t delay;
-	uint32_t max_video_frame_size;
-	uint32_t max_payload_transfer_size;
-#ifndef FX3_UVC_1_0_SUPPORT
-	uint32_t device_clock;
-	uint8_t	frame_info;
-	uint8_t prefered_version;
-	uint8_t min_version;
-	uint8_t max_version;
-#endif
-	uint8_t align_16[14];
-}uvc_control_t;
 
 /* UVC Probe Control Setting for a USB 2.0 connection. */
 uint8_t glProbeCtrl20[CY_FX_UVC_MAX_PROBE_SETTING] = {
@@ -153,7 +132,7 @@ uint8_t glProbeCtrl20[CY_FX_UVC_MAX_PROBE_SETTING] = {
     0x00, 0x00,
     0x00, 0x00,                 /* Internal video streaming i/f latency in ms */
     DBVAL(MAX_MODE0_FRAME_SIZE),
-    0x00, 0x80, 0x00, 0x00,
+    0x00, 0x80, 0x00, 0x00,    /* No. of bytes device can rx in single payload = 16 KB */
 
 #ifndef FX3_UVC_1_0_SUPPORT
     /* UVC 1.1 Probe Control has additional fields from UVC 1.0 */
@@ -168,8 +147,7 @@ uint8_t glProbeCtrl20[CY_FX_UVC_MAX_PROBE_SETTING] = {
 /* Video Probe Commit Control. This array is filled out when the host sends down the SET_CUR request. */
 static uint8_t glCommitCtrl[CY_FX_UVC_MAX_PROBE_SETTING_ALIGNED];
 
-/* Scratch buffer used for handling UVC class requests with a data phase. */
-static uint8_t glEp0Buffer[32];
+static uint8_t glEp0Buffer[CY_FX_UVC_MAX_PROBE_SETTING_ALIGNED];
 
 static CyU3PQueue       glSensorCmdQueue;
 static uint32_t          glSensorCmdQueueBuf[SENSOR_CMD_QUEUE_SIZE];
@@ -177,6 +155,7 @@ static volatile uint32_t glPendingFrameInterval = 0;
 static volatile uint32_t glPendingExposure = 0;
 static uint8_t glAeMode = 0x02;
 static uint8_t glWbAuto = 1;
+static uint16_t glGammaX100 = UVC_GAMMA_DEF;
 
 static uint8_t ae_auto_flags(void)
 {
@@ -194,16 +173,34 @@ static uint8_t all_auto_flags(void)
     return (uint8_t)(ae_auto_flags() | wb_auto_flags());
 }
 
-#define RB_CACHE_TTL_MS  5000u
+#define RB_CACHE_TTL_MS  3000u
 static imgsensor_readback_t glRbCache;
 static uint32_t glRbCacheMs   = 0;
 static CyBool_t glRbAttempted = CyFalse;
 static CyBool_t glRbValid     = CyFalse;
+#define RB_FAST_TTL_MS      300u
+#define RB_FAST_WINDOW_MS  RB_CACHE_TTL_MS
+static uint32_t glRbTouchMs   = 0;
+static CyBool_t glRbTouched   = CyFalse;
+
+static void uvc_readback_touch(void)
+{
+    glRbTouchMs = CyU3PGetTime();
+    glRbTouched = CyTrue;
+}
 
 static void uvc_refresh_readback(void)
 {
     uint32_t now = CyU3PGetTime();
-    if (!glRbAttempted || (uint32_t)(now - glRbCacheMs) >= RB_CACHE_TTL_MS)
+    uint32_t ttl = RB_CACHE_TTL_MS;
+    if (glRbTouched)
+    {
+        if ((uint32_t)(now - glRbTouchMs) < RB_FAST_WINDOW_MS)
+            ttl = RB_FAST_TTL_MS;
+        else
+            glRbTouched = CyFalse;
+    }
+    if (!glRbAttempted || (uint32_t)(now - glRbCacheMs) >= ttl)
     {
         imgsensor_readback_t rb;
         glRbAttempted = CyTrue;
@@ -233,32 +230,66 @@ static uint16_t uvc_live_gain(void)
     return 0;
 }
 
-/* UVC Header to be prefixed at the top of each 16 KB video data buffer. */
+static void uvc_probe_fill(uint8_t *ctrl, uint8_t fi, uint32_t ival, uint32_t fsz)
+{
+    ctrl[2]  = 1;
+    ctrl[3]  = fi;
+    ctrl[4]  = (uint8_t)(ival);       ctrl[5]  = (uint8_t)(ival >> 8);
+    ctrl[6]  = (uint8_t)(ival >> 16); ctrl[7]  = (uint8_t)(ival >> 24);
+    ctrl[18] = (uint8_t)(fsz);        ctrl[19] = (uint8_t)(fsz >> 8);
+    ctrl[20] = (uint8_t)(fsz >> 16);  ctrl[21] = (uint8_t)(fsz >> 24);
+    ctrl[22] = (uint8_t)(CY_FX_UVC_STREAM_BUF_SIZE);
+    ctrl[23] = (uint8_t)(CY_FX_UVC_STREAM_BUF_SIZE >> 8);
+    ctrl[24] = (uint8_t)(CY_FX_UVC_STREAM_BUF_SIZE >> 16);
+    ctrl[25] = (uint8_t)(CY_FX_UVC_STREAM_BUF_SIZE >> 24);
+}
+
+static uint8_t uvc_negotiate(uint8_t *ctrl)
+{
+    uint8_t  n    = (usbSpeed == CY_U3P_SUPER_SPEED) ? g_uvc_nmodes : 1u;
+    uint8_t  fi   = ctrl[3];
+    uint32_t want = (uint32_t)ctrl[4] | ((uint32_t)ctrl[5] << 8) |
+                    ((uint32_t)ctrl[6] << 16) | ((uint32_t)ctrl[7] << 24);
+    uint32_t fps, ival;
+    const uvc_mode_t *m;
+
+    if (n < 1u)  n  = 1u;
+    if (fi < 1u) fi = 1u;
+    if (fi > n)  fi = n;
+    m   = &g_uvc_modes[fi - 1];
+    fps = (usbSpeed == CY_U3P_SUPER_SPEED) ? m->fps : g_uvc_hs_fps;
+    if (fps == 0u)
+        fps = 30u;
+    ival = 10000000u / fps;
+    if (want >= ival && want <= 10000000u)
+        ival = want;
+
+    uvc_probe_fill(ctrl, fi, ival, (uint32_t)m->width * m->height * 2u);
+    return fi;
+}
+
+static void uvc_probe_init(void)
+{
+    uint32_t fsz = (uint32_t)g_uvc_modes[0].width * g_uvc_modes[0].height * 2u;
+    uint32_t fps = g_uvc_modes[0].fps ? g_uvc_modes[0].fps : 30u;
+
+    uvc_probe_fill(glProbeCtrl, 1, 10000000u / fps, fsz);
+    fps = g_uvc_hs_fps ? g_uvc_hs_fps : 30u;
+    uvc_probe_fill(glProbeCtrl20, 1, 10000000u / fps, fsz);
+}
+
 uint8_t volatile glUVCHeader[CY_FX_UVC_MAX_HEADER] =
 {
     0x0C,                               /* Header Length */
-    0x8C,                               /* Bit field header field */
-    0x00, 0x00, 0x00, 0x00,             /* Presentation time stamp field */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00  /* Source clock reference field */
+    0x80,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
-
-#ifdef UVC_EXTENSION_UNIT
-
-/* Format is: Version 1.0 (Major.Minor) Build date: 9/10/17 (MM/DD/YY) */
-static uint8_t glFxUvcFirmwareVersion[5] = {
-    1,       /* Major version */
-    0,       /* Minor version */
-    9,       /* Build month */
-    22,      /* Build day */
-    17       /* Build Year */
-};
-#endif
 
 #ifdef DEBUG_PRINT_FRAME_COUNT
 volatile static uint32_t glFrameCount = 0;              /* Number of video frames transferred so far. */
 volatile static uint32_t glDmaDone = 1;                 /* Number of buffers transferred in the current frame. */
 #endif
-volatile static uint32_t gTotal_bytes = 0;
 
 /* Add the UVC packet header to the top of the specified DMA buffer. */
 void
@@ -278,39 +309,31 @@ CyFxUVCAddHeader (
     }
 }
 
-
-/* Application Error Handler */
 void
 CyFxAppErrorHandler (
         CyU3PReturnStatus_t apiRetStatus    /* API return status */
         )
 {
-    /* This function is hit when we have hit a critical application error. This is not
-       expected to happen, and the current implementation of this function does nothing
-       except stay in a loop printing error messages through the UART port.
-
-       This function can be modified to take additional error handling actions such
-       as cycling the USB connection or performing a warm reset.
-     */
 #if LED_STATUS_ENABLED
     led_status_fatal();
 #endif
+    CyU3PDebugPrint (1, "FATAL ERROR: 0x%x\r\n", apiRetStatus);
     for (;;)
     {
-        CyU3PDebugPrint (4, "Error handler...\r\n");
         CyU3PThreadSleep (1000);
     }
 }
 
-/* This function performs the operations for a Video Streaming Abort.
-   This is called every time there is a USB reset, suspend or disconnect event.
- */
 static void
 CyFxUVCApplnAbortHandler (
         void)
 {
-    /* Set Video Stream Abort Event */
-    CyU3PEventSet (&glFxUVCEvent, CY_FX_UVC_STREAM_ABORT_EVENT, CYU3P_EVENT_OR);
+    uint32_t cmd = SENSOR_CMD_ABORT;
+
+    if (CyU3PQueueSend (&glSensorCmdQueue, &cmd, CYU3P_NO_WAIT) == CY_U3P_SUCCESS)
+        CyU3PEventSet (&glFxUVCEvent, CY_FX_UVC_SENSOR_WRITE_EVENT, CYU3P_EVENT_OR);
+    else
+        CyU3PEventSet (&glFxUVCEvent, CY_FX_UVC_STREAM_ABORT_EVENT, CYU3P_EVENT_OR);
 }
 
 /* This is the Callback function to handle the USB Events */
@@ -320,11 +343,13 @@ CyFxUVCApplnUSBEventCB (
         uint16_t             evdata  /* Event data */
         )
 {
+    (void)evdata;
     switch (evtype)
     {
         case CY_U3P_USB_EVENT_SUSPEND:
             CyU3PDebugPrint (4, "UsbEventCB: SUSPEND encountered...\r\n");
-            /* Set USB suspend Event */
+            if (glIsApplnActive || glPipeArmed)
+                CyFxUVCApplnAbortHandler ();
             CyU3PEventSet (&glFxUVCEvent, CY_FX_USB_SUSPEND_EVENT_HANDLER, CYU3P_EVENT_OR);
             break;
 
@@ -332,37 +357,58 @@ CyFxUVCApplnUSBEventCB (
             CyU3PDebugPrint (4, "UsbEventCB: CY_U3P_USB_EVENT_EP_UNDERRUN encountered...\r\n");
             break;
 
-        /* Intentional Fall-through all cases */
         case CY_U3P_USB_EVENT_SETCONF:
-            if (CyU3PUsbGetSpeed() == CY_U3P_SUPER_SPEED)
+            if ((CyU3PUsbGetSpeed () != CY_U3P_SUPER_SPEED) && !glMuxRetryDone)
             {
-                CyU3PDebugPrint(4, "UsbEventCB: Detected SS USB Connection\r\n");
+                if (glIsApplnActive || glPipeArmed)
+                    CyFxUVCApplnAbortHandler ();
+                glMuxRetryDone = CyTrue;
+                glMuxRetryMs   = CyU3PGetTime ();
+                CyU3PConnectState (CyFalse, CyTrue);
+                CyU3PThreadSleep (200);
+                glMuxSelValue = !glMuxSelValue;
+                CyU3PGpioSetValue (FX3_MUXSEL_GPIO, glMuxSelValue);
+                CyU3PThreadSleep (100);
+                CyU3PConnectState (CyTrue, CyTrue);
+                break;
             }
-            else if (CyU3PUsbGetSpeed() == CY_U3P_HIGH_SPEED)
-            {
-                CyU3PDebugPrint(4, "UsbEventCB: Detected HS USB Connection\r\n");
-            }
+            CyU3PDebugPrint (4, "UsbEventCB: SETCONF speed=%d muxsel=%d\r\n",
+                             CyU3PUsbGetSpeed (), glMuxSelValue);
+            glIsConfigured = CyTrue;
+            glLedHardStop  = CyFalse;
+#if LED_STATUS_ENABLED
+            glLedLinkDegraded = (CyU3PUsbGetSpeed () != CY_U3P_SUPER_SPEED);
+            led_status_poke();
+#endif
+            CyU3PUsbLPMEnable ();
+            if (glIsApplnActive || glPipeArmed)
+                CyFxUVCApplnAbortHandler ();
+            break;
+
         case CY_U3P_USB_EVENT_RESET:
         case CY_U3P_USB_EVENT_DISCONNECT:
         case CY_U3P_USB_EVENT_CONNECT:
-            if (evtype == CY_U3P_USB_EVENT_SETCONF)
-              glIsConfigured = CyTrue;
-            else
-              glIsConfigured = CyFalse;
+            glIsConfigured = CyFalse;
+            glLedHardStop  = CyFalse;
+            if ((evtype == CY_U3P_USB_EVENT_DISCONNECT) &&
+                (!glMuxRetryDone || (uint32_t)(CyU3PGetTime () - glMuxRetryMs) > 1000u))
+            {
+                glMuxRetryDone = CyFalse;
+                glMuxSelValue  = CyTrue;
+                CyU3PGpioSetValue (FX3_MUXSEL_GPIO, glMuxSelValue);
+            }
 #if LED_STATUS_ENABLED
-            if (evtype == CY_U3P_USB_EVENT_SETCONF)
-                glLedLinkDegraded = (CyU3PUsbGetSpeed() != CY_U3P_SUPER_SPEED);
-            else if (evtype == CY_U3P_USB_EVENT_DISCONNECT)
+            if (evtype == CY_U3P_USB_EVENT_DISCONNECT)
                 glLedLinkDegraded = CyFalse;
             led_status_poke();
 #endif
 
             /* Stop the video streamer application and enable LPM. */
-            CyU3PUsbLPMEnable();
-            if (glIsApplnActive)
+            CyU3PUsbLPMEnable ();
+            if (glIsApplnActive || glPipeArmed)
             {
-              CyU3PDebugPrint(4, "UsbEventCB: Call App Stop\r\n");
-              CyFxUVCApplnAbortHandler();
+                CyU3PDebugPrint (4, "UsbEventCB: Call App Stop\r\n");
+                CyFxUVCApplnAbortHandler ();
             }
             break;
 
@@ -487,11 +533,6 @@ CyFxUVCApplnUSBSetupCB (
     return uvcHandleReq;
 }
 
-/* DMA callback providing notification when data buffers are received from the sensor and when they have
- * been drained by the USB host.
- *
- * The UVC headers are attached to the data, and forwarded to the USB host in this callback function.
- */
 void
 CyFxUvcApplnDmaCallback (
         CyU3PDmaMultiChannel *chHandle,
@@ -502,102 +543,49 @@ CyFxUvcApplnDmaCallback (
     CyU3PDmaBuffer_t    dmaBuffer;
     CyU3PReturnStatus_t status = CY_U3P_SUCCESS;
 
+    (void)input;
+    if (type != CY_U3P_DMA_CB_PROD_EVENT)
+        return;
 
+    glLastProdTimeMs = CyU3PGetTime ();
 
-
-
-    if (type == CY_U3P_DMA_CB_PROD_EVENT)
+    /* There is a possibility that CyU3PDmaMultiChannelGetBuffer will return CY_U3P_ERROR_INVALID_SEQUENCE here.
+     * In such a case, do nothing. We make up for this missed produce event by making repeated commit actions
+     * in subsequent produce event callbacks.
+     */
+    status = CyU3PDmaMultiChannelGetBuffer (chHandle, &dmaBuffer, CYU3P_NO_WAIT);
+    while (status == CY_U3P_SUCCESS)
     {
-        /* This is a produce event notification to the CPU. This notification is received upon reception of
-         * every buffer. The buffer will not be sent out unless it is explicitly committed. The call shall fail
-         * if there is a bus reset / usb disconnect or if there is any application error.
-         */
+        CyBool_t eof = (dmaBuffer.count != CY_FX_UVC_BUF_FULL_SIZE) ? CyTrue : CyFalse;
 
-#ifdef FRAME_TIMER_ENABLE
-        /* Received data from the sensor so stop the frame timer */
-        CyU3PTimerStop(&UvcTimer);
+        CyFxUVCAddHeader (dmaBuffer.buffer - CY_FX_UVC_MAX_HEADER,
+                          eof ? CY_FX_UVC_HEADER_EOF : CY_FX_UVC_HEADER_FRAME);
 
-        /* Restart the frame timer so that we receive the next buffer before timer overflows */
-        CyU3PTimerModify(&UvcTimer, glFrameTimerPeriod, 0);
-        CyU3PTimerStart(&UvcTimer);
-#endif
-
-        /* There is a possibility that CyU3PDmaMultiChannelGetBuffer will return CY_U3P_ERROR_INVALID_SEQUENCE here.
-         * In such a case, do nothing. We make up for this missed produce event by making repeated commit actions
-         * in subsequent produce event callbacks.
-         */
-        status = CyU3PDmaMultiChannelGetBuffer (chHandle, &dmaBuffer, CYU3P_NO_WAIT);
-        while (status == CY_U3P_SUCCESS)
+        /* Commit Buffer to USB*/
+        status = CyU3PDmaMultiChannelCommitBuffer (chHandle, (dmaBuffer.count + CY_FX_UVC_MAX_HEADER), 0);
+        if (status != CY_U3P_SUCCESS)
         {
-        	CyU3PReturnStatus_t apiRetStatus = CY_U3P_SUCCESS;
-        	gTotal_bytes = gTotal_bytes + dmaBuffer.count;
-
-        	apiRetStatus = CyU3PGpioSetValue (DEBUG1_GPIO, CyFalse);
-        	if (apiRetStatus != CY_U3P_SUCCESS)
-        	{
-        		CyU3PDebugPrint (4, "GPIO Set Value Error, Error Code = %d\n", apiRetStatus);
-        		return;
-        	}
-
-        	//Wait for some time to allow proper reset.
-
-        	// Drive the GPIO high to bring the sensor out of reset.
-        	apiRetStatus = CyU3PGpioSetValue (DEBUG1_GPIO, CyTrue);
-        	if (apiRetStatus != CY_U3P_SUCCESS)
-        	{
-        		CyU3PDebugPrint (4, "GPIO Set Value Error, Error Code = %d\n", apiRetStatus);
-        		return;
-        	}
-
-            /* Add Headers*/
-            if (dmaBuffer.count == CY_FX_UVC_BUF_FULL_SIZE)
+            if (glDmaResetFlag == CY_FX_UVC_DMA_RESET_EVENT_NOT_ACTIVE)
             {
-                /* A full buffer indicates there is more data to go in this video frame. */
-                CyFxUVCAddHeader (dmaBuffer.buffer - CY_FX_UVC_MAX_HEADER, CY_FX_UVC_HEADER_FRAME);
+                glDmaResetFlag = CY_FX_UVC_DMA_RESET_COMMIT_BUFFER_FAILURE;
+                CyU3PEventSet (&glFxUVCEvent, CY_FX_UVC_DMA_RESET_EVENT, CYU3P_EVENT_OR);
             }
-            else
-            {
-                /* A partially filled buffer indicates the end of the ongoing video frame. */
-                CyFxUVCAddHeader (dmaBuffer.buffer - CY_FX_UVC_MAX_HEADER, CY_FX_UVC_HEADER_EOF);
-
-               	//CyU3PDebugPrint (4, "t %d\n", gTotal_bytes);
-                  //              	gTotal_bytes =0;
-
-#ifdef DEBUG_PRINT_FRAME_COUNT
-                glFrameCount++;
-            //    glDmaDone = 0;
-#endif
-
-
-
-            }
-
-            /* Commit Buffer to USB*/
-            status = CyU3PDmaMultiChannelCommitBuffer (chHandle, (dmaBuffer.count + CY_FX_UVC_MAX_HEADER), 0);
-            if (status == CY_U3P_SUCCESS)
-            {
-#ifdef DEBUG_PRINT_FRAME_COUNT
-                glDmaDone++;
-#endif
-            }
-            else
-            {
-                if(glDmaResetFlag == CY_FX_UVC_DMA_RESET_EVENT_NOT_ACTIVE)
-                {
-                    glDmaResetFlag = CY_FX_UVC_DMA_RESET_COMMIT_BUFFER_FAILURE;
-                    CyU3PEventSet(&glFxUVCEvent, CY_FX_UVC_DMA_RESET_EVENT, CYU3P_EVENT_OR);
-                }
-                break;
-            }
-
-            /* Check if any more buffers are ready to go, and commit them here. */
-            status = CyU3PDmaMultiChannelGetBuffer (chHandle, &dmaBuffer, CYU3P_NO_WAIT);
+            break;
         }
-    }
-    else if (type == CY_U3P_DMA_CB_CONS_EVENT)
-    {
-        streamingStarted = CyTrue;
-        glCommitBufferFailureCount = 0;        /* Reset the counter after data is consumed by USB */
+
+#ifdef DEBUG_PRINT_FRAME_COUNT
+        glDmaDone++;
+#endif
+        if (eof)
+        {
+#ifdef DEBUG_PRINT_FRAME_COUNT
+            glFrameCount++;
+#endif
+            CyU3PEventSet (&glFxUVCEvent, CY_FX_UVC_FRAME_DONE_EVENT, CYU3P_EVENT_OR);
+        }
+
+        /* Check if any more buffers are ready to go, and commit them here. */
+        status = CyU3PDmaMultiChannelGetBuffer (chHandle, &dmaBuffer, CYU3P_NO_WAIT);
     }
 }
 
@@ -607,37 +595,6 @@ CyFxGpifCB (
         uint8_t currentState            /* GPIF state which triggered the interrupt. */
         )
 {
-    /* The ongoing video frame has ended. If we have a partial buffer sitting on the socket, we need to forcibly
-     * wrap it up. We also need to toggle the FW_TRG a couple of times to get the state machine ready for the
-     * next frame.
-     *
-     * Note: DMA channel APIs cannot be used here as this is ISR context. We are making use of the raw socket
-     * APIs.
-     */
-
-/*
-	CyU3PReturnStatus_t apiRetStatus = CY_U3P_SUCCESS;
-
-  	apiRetStatus = CyU3PGpioSetValue (DEBUG1_GPIO, CyFalse);
-	if (apiRetStatus != CY_U3P_SUCCESS)
-	{
-	   CyU3PDebugPrint (4, "GPIO Set Value Error, Error Code = %d\n", apiRetStatus);
-	   return;
-	}
-
-	// Wait for some time to allow proper reset.
-
-	// Drive the GPIO high to bring the sensor out of reset.
-	apiRetStatus = CyU3PGpioSetValue (DEBUG1_GPIO, CyTrue);
-	if (apiRetStatus != CY_U3P_SUCCESS)
-	{
-	   CyU3PDebugPrint (4, "GPIO Set Value Error, Error Code = %d\n", apiRetStatus);
-	   return;
-	}
-*/
-
-	 //CyU3PDebugPrint (4, "FSYNC Callback (\n");
-
     switch (currentState)
     {
         case PARTIAL_BUF_IN_SCK0:
@@ -727,7 +684,7 @@ CyFxUVCApplnI2CInit (void)
     /*  Set I2C Configuration */
     i2cConfig.bitRate    = 100000;      /*  100 KHz */
     i2cConfig.isDma      = CyFalse;
-    i2cConfig.busTimeout = 0xffffffffU;
+    i2cConfig.busTimeout = 0x00100000;
     i2cConfig.dmaTimeout = 0xffff;
 
     status = CyU3PI2cSetConfig (&i2cConfig, 0);
@@ -736,6 +693,8 @@ CyFxUVCApplnI2CInit (void)
         CyU3PDebugPrint (4, "I2C configuration failed!\n");
         CyFxAppErrorHandler (status);
     }
+
+    sensor_i2c_lock_init ();
 }
 
 #ifdef BACKFLOW_DETECT
@@ -857,57 +816,26 @@ CyFxUVCApplnInit (void)
     led_status_init();
 #endif
 
-
     apiRetStatus = CyU3PDeviceGpioOverride (DEBUG1_GPIO, CyTrue);
-     if (apiRetStatus != 0)
-     {
-         CyU3PDebugPrint (4, "GPIO Override failed, Error Code = %d\n", apiRetStatus);
-         CyFxAppErrorHandler (apiRetStatus);
-     }
+    if (apiRetStatus != 0)
+    {
+        CyU3PDebugPrint (4, "GPIO Override failed, Error Code = %d\n", apiRetStatus);
+        CyFxAppErrorHandler (apiRetStatus);
+    }
 
-     gpioConfig.outValue    = CyTrue;
-     gpioConfig.driveLowEn  = CyTrue;
-     gpioConfig.driveHighEn = CyTrue;
-     gpioConfig.inputEn     = CyFalse;
-     gpioConfig.intrMode    = CY_U3P_GPIO_NO_INTR;
-     apiRetStatus           = CyU3PGpioSetSimpleConfig (DEBUG1_GPIO, &gpioConfig);
-     if (apiRetStatus != CY_U3P_SUCCESS)
-     {
-         CyU3PDebugPrint (4, "GPIO Set Config Error, Error Code = %d\n", apiRetStatus);
-         CyFxAppErrorHandler (apiRetStatus);
-     }
+    gpioConfig.outValue    = CyTrue;
+    gpioConfig.driveLowEn  = CyTrue;
+    gpioConfig.driveHighEn = CyTrue;
+    gpioConfig.inputEn     = CyFalse;
+    gpioConfig.intrMode    = CY_U3P_GPIO_NO_INTR;
+    apiRetStatus           = CyU3PGpioSetSimpleConfig (DEBUG1_GPIO, &gpioConfig);
+    if (apiRetStatus != CY_U3P_SUCCESS)
+    {
+        CyU3PDebugPrint (4, "GPIO Set Config Error, Error Code = %d\n", apiRetStatus);
+        CyFxAppErrorHandler (apiRetStatus);
+    }
 
-
-    /* CTL pins are restricted and cannot be configured using I/O matrix configuration function,
-     * must use GpioOverride to configure it */
-//    {
-//        CyFxAppErrorHandler (apiRetStatus);
-//    }
-//    if (apiRetStatus != CY_U3P_SUCCESS)
-//    {
-//        CyFxAppErrorHandler (apiRetStatus);
-//    }
-
-
-
-
-//	{
-//	   CyFxAppErrorHandler (apiRetStatus);
-//	}
-
-	/* SENSOR_RESET_GPIO is the Sensor reset pin */
-//	if (apiRetStatus != CY_U3P_SUCCESS)
-//	{
-//	   CyFxAppErrorHandler (apiRetStatus);
-//	}
-
-
-
-
-
-    /* CTL pins are restricted and cannot be configured using I/O matrix configuration function,
-    * must use GpioOverride to configure it */
-	CyU3PGpioSetValue (FX3_MUXSEL_GPIO, CyTrue);
+    CyU3PGpioSetValue (FX3_MUXSEL_GPIO, glMuxSelValue);
     apiRetStatus = CyU3PDeviceGpioOverride (FX3_MUXSEL_GPIO, CyTrue);
     if (apiRetStatus != 0)
     {
@@ -915,8 +843,7 @@ CyFxUVCApplnInit (void)
         CyFxAppErrorHandler (apiRetStatus);
     }
 
-    /* SENSOR_RESET_GPIO is the Sensor reset pin */
-    gpioConfig.outValue    = CyTrue;
+    gpioConfig.outValue    = glMuxSelValue;
     gpioConfig.driveLowEn  = CyTrue;
     gpioConfig.driveHighEn = CyTrue;
     gpioConfig.inputEn     = CyFalse;
@@ -927,12 +854,6 @@ CyFxUVCApplnInit (void)
         CyU3PDebugPrint (4, "GPIO Set Config Error, Error Code = %d\n", apiRetStatus);
         CyFxAppErrorHandler (apiRetStatus);
     }
-
-
-
-
-
-
 
     /* Initialize the P-port. */
     pibclock.clkDiv      = 2;
@@ -959,12 +880,13 @@ CyFxUVCApplnInit (void)
     CyU3PPibRegisterCallback (CyFxUvcAppPibCallback, CYU3P_PIB_INTR_ERROR);
 #endif
 
-    /* Image sensor initialization. Reset and then initialize with appropriate configuration. */
     CyU3PThreadSleep(100);
     SensorInit ();
 
     CyFxUvcLoadModesAndBuild ();
     sensor_build_config_from_modes ();
+    CyFxUvcApplyIdentity ();
+    uvc_probe_init ();
 
     /* USB initialization. */
     apiRetStatus = CyU3PUsbStart ();
@@ -1000,6 +922,7 @@ CyFxUVCApplnInit (void)
     CyU3PUsbSetDesc (CY_U3P_USB_SET_STRING_DESCR, 0, (uint8_t *)CyFxUSBStringLangIDDscr);
     CyU3PUsbSetDesc (CY_U3P_USB_SET_STRING_DESCR, 1, (uint8_t *)CyFxUSBManufactureDscr);
     CyU3PUsbSetDesc (CY_U3P_USB_SET_STRING_DESCR, 2, (uint8_t *)CyFxUSBProductDscr);
+    CyU3PUsbSetDesc (CY_U3P_USB_SET_STRING_DESCR, 3, CyFxUSBSerialDscr);
 
     /* Configure the video streaming endpoint. */
     endPointConfig.enable   = 1;
@@ -1036,6 +959,7 @@ CyFxUVCApplnInit (void)
     }
 
     /* Create a DMA Manual channel for sending the video data to the USB host. */
+    CyU3PMemSet ((uint8_t *)&dmaMultiConfig, 0, sizeof (dmaMultiConfig));
     dmaMultiConfig.size           = CY_FX_UVC_STREAM_BUF_SIZE;
     dmaMultiConfig.count          = CY_FX_UVC_STREAM_BUF_COUNT;
     dmaMultiConfig.validSckCount  = 2;
@@ -1047,7 +971,7 @@ CyFxUVCApplnInit (void)
     dmaMultiConfig.prodFooter     = 4;                  /* 4 byte footer to compensate for the 12 byte header. */
     dmaMultiConfig.consHeader     = 0;
     dmaMultiConfig.dmaMode        = CY_U3P_DMA_MODE_BYTE;
-    dmaMultiConfig.notification   = CY_U3P_DMA_CB_PROD_EVENT | CY_U3P_DMA_CB_CONS_EVENT;
+    dmaMultiConfig.notification   = CY_U3P_DMA_CB_PROD_EVENT;
     dmaMultiConfig.cb             = CyFxUvcApplnDmaCallback;
     apiRetStatus = CyU3PDmaMultiChannelCreate (&glChHandleUVCStream, CY_U3P_DMA_TYPE_MANUAL_MANY_TO_ONE,
             &dmaMultiConfig);
@@ -1141,61 +1065,21 @@ CyFxUVCApplnInit (void)
     }
 #endif
 
-#ifdef FRAME_TIMER_ENABLE
-  CyU3PTimerCreate(&UvcTimer, CyFxUvcAppProgressTimer, 0x00, glFrameTimerPeriod, 0, CYU3P_NO_ACTIVATE);
-#endif
-
-
-  /* Disable USB2.0 connection */
-  apiRetStatus = CyU3PUsbControlUsb2Support (CyFalse);
+    apiRetStatus = CyU3PConnectState (CyTrue, CyTrue);
     if (apiRetStatus != CY_U3P_SUCCESS)
     {
-      	 CyU3PDebugPrint(4, "USB2.0 host disable failed = %d\n", apiRetStatus);
+        CyU3PDebugPrint (1, "USB Connect failed, Error Code = %d\r\n", apiRetStatus);
+        CyFxAppErrorHandler (apiRetStatus);
     }
 
-  CyU3PDebugPrint(4, "USB3 attempt: MUX_SEL=HIGH\n");
-  apiRetStatus = CyU3PConnectState(CyTrue, CyTrue);
-  CyU3PThreadSleep(200);
-
-    if(CyU3PUsbGetSpeed() != CY_U3P_SUPER_SPEED)
-     {
-        CyU3PDebugPrint(4, "MUX_SEL=HIGH failed, speed=%d. Trying MUX_SEL=LOW\n", CyU3PUsbGetSpeed());
-        apiRetStatus = CyU3PConnectState(CyFalse, CyFalse);
-        CyU3PThreadSleep(100);
-
-        CyU3PGpioSetValue (FX3_MUXSEL_GPIO, CyFalse);
-        CyU3PThreadSleep(10);
-
-        apiRetStatus = CyU3PUsbControlUsb2Support (CyTrue);
-        apiRetStatus = CyU3PConnectState(CyTrue, CyTrue);
-        CyU3PThreadSleep(200);
-
-        if (CyU3PUsbGetSpeed() == CY_U3P_SUPER_SPEED)
-        {
-            CyU3PDebugPrint(4, "USB3 connected: MUX_SEL=LOW\n");
-        }
-        else
-        {
-            CyU3PDebugPrint(4, "USB3 failed both orientations, speed=%d\n", CyU3PUsbGetSpeed());
-        }
-      }
-
-
-
-//    /* Enable USB connection from the FX3 device, preferably at USB 3.0 speed. */
-//    apiRetStatus = CyU3PConnectState (CyTrue, CyTrue);
-//    if (apiRetStatus != CY_U3P_SUCCESS)
-//    {
-//        CyU3PDebugPrint (4, "USB Connect failed, Error Code = %d\n", apiRetStatus);
-//        CyFxAppErrorHandler (apiRetStatus);
-//    }
 #if LED_STATUS_ENABLED
     led_status_set_connected(CyTrue);
 #endif
 }
 
-void
-CyFxUvcApplnStop()
+static void
+CyFxUvcApplnStop (
+        void)
 {
 #ifdef DEBUG_PRINT_FRAME_COUNT
     /* Clear state variables. */
@@ -1203,14 +1087,10 @@ CyFxUvcApplnStop()
     glFrameCount = 0;
 #endif /* DEBUG_PRINT_FRAME_COUNT */
 
-#ifdef FRAME_TIMER_ENABLE
-    /* Stop the frame timer during an application stop */
-    CyU3PTimerStop(&UvcTimer);
-#endif
+    glPipeArmed = CyFalse;
 
     /* Disable the GPIF state machine. */
     CyU3PGpifDisable (CyFalse);
-    streamingStarted = CyFalse;
     glDmaResetFlag = CY_FX_UVC_DMA_RESET_EVENT_NOT_ACTIVE;
 
     /* Place the EP in NAK mode before cleaning up the pipe. */
@@ -1225,15 +1105,18 @@ CyFxUvcApplnStop()
 
     /* Allow USB low power link transitions at this stage. */
     CyU3PUsbLPMEnable ();
-	CyU3PReturnStatus_t apiRetStatus = CY_U3P_SUCCESS;
 
     CyU3PDebugPrint (4, "Application Stopped\r\n");
 }
 
-void
-CyFxUvcApplnStart()
+static CyBool_t
+CyFxUvcApplnStart (
+        void)
 {
     CyU3PReturnStatus_t   apiRetStatus;
+
+    if (glPipeArmed)
+        CyFxUvcApplnStop ();
 
 #ifdef DEBUG_PRINT_FRAME_COUNT
     /* Clear state variables. */
@@ -1268,33 +1151,231 @@ CyFxUvcApplnStart()
     apiRetStatus = CyU3PDmaMultiChannelSetXfer (&glChHandleUVCStream, 0, 0);
     if (apiRetStatus != CY_U3P_SUCCESS)
     {
-        /* Error handling */
-        CyU3PDebugPrint (4, "DMA Channel Set Transfer Failed, Error Code = %d\r\n", apiRetStatus);
-        CyFxAppErrorHandler (apiRetStatus);
+        CyU3PDebugPrint (1, "DMA Channel Set Transfer Failed, Error Code = %d\r\n", apiRetStatus);
+        CyU3PUsbSetEpNak (CY_FX_EP_BULK_VIDEO, CyFalse);
+        CyU3PUsbLPMEnable ();
+        return CyFalse;
     }
+
+    glDmaResetFlag   = CY_FX_UVC_DMA_RESET_EVENT_NOT_ACTIVE;
+    glLastProdTimeMs = CyU3PGetTime ();
+    glPipeArmed      = CyTrue;
 
     CyU3PUsbSetEpNak (CY_FX_EP_BULK_VIDEO, CyFalse);
     CyU3PBusyWait (125);
 
-#ifdef FRAME_TIMER_ENABLE
-    /* Start the frame timer so that we receive first buffer on time */
-    CyU3PTimerModify(&UvcTimer, glFrameTimerPeriod, 0);
-    CyU3PTimerStart(&UvcTimer);
-#endif
-    glDmaResetFlag = CY_FX_UVC_DMA_RESET_EVENT_NOT_ACTIVE;
-
     /* Start the state machine from the designated start state. */
     apiRetStatus = CyU3PGpifSMSwitch(CY_FX_UVC_INVALID_GPIF_STATE, START_SCK0,
             CY_FX_UVC_INVALID_GPIF_STATE, ALPHA_START_SCK0, CY_FX_UVC_GPIF_SWITCH_TIMEOUT);
-
     if (apiRetStatus != CY_U3P_SUCCESS)
     {
-        /* Error Handling */
-        CyU3PDebugPrint (4, "Switching GPIF state machine failed, Error Code = %d\r\n", apiRetStatus);
-        CyFxAppErrorHandler (apiRetStatus);
+        CyU3PDebugPrint (4, "GPIF switch failed (0x%x), reloading GPIF\r\n", apiRetStatus);
+        apiRetStatus = CyU3PGpifLoad ((CyU3PGpifConfig_t *) &CyFxGpifConfig);
+        if (apiRetStatus == CY_U3P_SUCCESS)
+        {
+            CyU3PGpifRegisterSMIntrCallback (CyFxGpifCB);
+            apiRetStatus = CyU3PGpifSMSwitch(CY_FX_UVC_INVALID_GPIF_STATE, START_SCK0,
+                    CY_FX_UVC_INVALID_GPIF_STATE, ALPHA_START_SCK0, CY_FX_UVC_GPIF_SWITCH_TIMEOUT);
+        }
+        if (apiRetStatus != CY_U3P_SUCCESS)
+        {
+            CyU3PDebugPrint (1, "GPIF start failed, Error Code = %d\r\n", apiRetStatus);
+            CyFxUvcApplnStop ();
+            return CyFalse;
+        }
     }
 
     CyU3PDebugPrint (4, "Application Started\r\n");
+    return CyTrue;
+}
+
+static void
+uvc_stop_ack_arm (
+        void)
+{
+    glStopAckSeq     = sensor_last_write_seq ();
+    glStopAckSinceMs = CyU3PGetTime ();
+    glStopAckPollMs  = glStopAckSinceMs;
+    glStopAckSentMs  = glStopAckSinceMs;
+    glStopAckPending = CyTrue;
+}
+
+static CyBool_t
+uvc_stop_applied (
+        void)
+{
+    imgsensor_readback_t rb;
+    uint32_t now;
+
+    if (!glStopAckPending)
+        return CyTrue;
+    now = CyU3PGetTime ();
+    if ((uint32_t)(now - glStopAckSinceMs) >= CY_FX_UVC_STOP_ACK_TIMEOUT_MS)
+    {
+        CyU3PDebugPrint (4, "STOP seq %d not applied after %d ms -- starting anyway\r\n",
+                         glStopAckSeq, CY_FX_UVC_STOP_ACK_TIMEOUT_MS);
+        glStopAckPending = CyFalse;
+        return CyTrue;
+    }
+    if ((uint32_t)(now - glStopAckPollMs) < CY_FX_UVC_STOP_ACK_POLL_MS)
+        return CyFalse;
+    glStopAckPollMs = now;
+    if (sensor_i2c_read (CHC5_READBACK_I2C_REG, (uint8_t *)&rb, sizeof (rb)) != CY_U3P_SUCCESS
+        || rb.rb_seq != rb.rb_seq_echo
+        || !(rb.rb_flags & RB_F_APPLIED_SEQ)
+        || rb.exposure_us == 0xFFFFFFFFu)
+        return CyFalse;
+    if ((uint8_t)(rb.applied_seq - glStopAckSeq) < 0x80u)
+    {
+        glStopAckPending = CyFalse;
+        return CyTrue;
+    }
+    if ((uint32_t)(now - glStopAckSentMs) >= CY_FX_UVC_STOP_ACK_RESEND_MS)
+    {
+        CyU3PDebugPrint (4, "STOP seq %d not applied after %d ms -- sending it again\r\n",
+                         glStopAckSeq, CY_FX_UVC_STOP_ACK_RESEND_MS);
+        if (sensor_resend_stop ())
+            glStopAckSeq = sensor_last_write_seq ();
+        glStopAckSentMs = now;
+    }
+    return CyFalse;
+}
+
+static void
+uvc_start_ack_arm (
+        CyBool_t written,
+        CyBool_t restart)
+{
+    glStartAckRestart   = restart;
+    glStartAckSeq       = sensor_last_write_seq ();
+    glStartAckSinceMs   = CyU3PGetTime ();
+    glStartAckPollMs    = glStartAckSinceMs;
+    glStartAckSentMs    = glStartAckSinceMs;
+    glStartAckWriteFail = !written;
+    glStartAckPending   = CyTrue;
+}
+
+static void
+uvc_start_ack_poll (
+        void)
+{
+    imgsensor_readback_t rb;
+    uint32_t now;
+
+    if (!glStartAckPending)
+        return;
+    if (!glIsApplnActive || !sensor_is_streaming ())
+    {
+        glStartAckPending = CyFalse;
+        return;
+    }
+    now = CyU3PGetTime ();
+    if ((uint32_t)(now - glStartAckSinceMs) >= CY_FX_UVC_START_ACK_TIMEOUT_MS)
+    {
+        CyU3PDebugPrint (4, "START seq %d not applied after %d ms -- giving up\r\n",
+                         glStartAckSeq, CY_FX_UVC_START_ACK_TIMEOUT_MS);
+        glStartAckPending = CyFalse;
+        return;
+    }
+    if (glStartAckWriteFail && !glStartAckRestart)
+    {
+        if ((uint32_t)(now - glStartAckSentMs) < CY_FX_UVC_STOP_RETRY_MS)
+            return;
+    }
+    else
+    {
+        if ((uint32_t)(now - glStartAckPollMs) < CY_FX_UVC_START_ACK_POLL_MS)
+            return;
+        glStartAckPollMs = now;
+        if (sensor_i2c_read (CHC5_READBACK_I2C_REG, (uint8_t *)&rb, sizeof (rb)) != CY_U3P_SUCCESS
+            || rb.rb_seq != rb.rb_seq_echo
+            || !(rb.rb_flags & RB_F_APPLIED_SEQ)
+            || rb.exposure_us == 0xFFFFFFFFu)
+            return;
+        if ((uint8_t)(rb.applied_seq - glStartAckSeq) < 0x80u)
+        {
+            glStartAckPending = CyFalse;
+            return;
+        }
+        if ((uint32_t)(now - glStartAckSentMs) < CY_FX_UVC_START_ACK_RESEND_MS)
+            return;
+    }
+    CyU3PDebugPrint (4, "START seq %d not applied -- asserting it again\r\n", glStartAckSeq);
+    glStartAckWriteFail = !sensor_resend_start (glStartAckRestart);
+    glStartAckSentMs    = now;
+}
+
+static void
+uvc_stream_stop (
+        void)
+{
+    if (glPipeArmed)
+        CyFxUvcApplnStop ();
+    glIsApplnActive = CyFalse;
+#if LED_STATUS_ENABLED
+    led_status_poke();
+#endif
+    if (sensor_is_streaming ())
+    {
+        if (sensor_stream_stop ())
+            uvc_stop_ack_arm ();
+        else
+        {
+            glStopRetry   = CyTrue;
+            glStopRetryMs = CyU3PGetTime ();
+        }
+    }
+}
+
+static void
+uvc_stream_start (
+        void)
+{
+    CyBool_t restart = sensor_is_streaming ();
+    CyBool_t written;
+
+    selected_img_mode->stream_enable =
+        (restart ? STREAM_STATE_ON : STREAM_STATE_OFF) | STREAM_CMD_START;
+    CyU3PDebugPrint (4, "START %dx%d mfps=%d\r\n", selected_img_mode->width,
+                     selected_img_mode->height, selected_img_mode->fps_mhz);
+    written = (sensor_write_config () == CY_U3P_SUCCESS);
+    if (!written)
+        CyU3PDebugPrint (1, "START write to PS failed -- re-asserted until applied\r\n");
+    sensor_set_streaming (CyTrue);
+    glStopRetry     = CyFalse;
+    glLedHardStop   = CyFalse;
+    glIsApplnActive = CyTrue;
+#if LED_STATUS_ENABLED
+    led_status_poke();
+#endif
+    if (!CyFxUvcApplnStart ())
+    {
+        uvc_stream_stop ();
+        return;
+    }
+    uvc_start_ack_arm (written, restart);
+}
+
+static void
+uvc_request_start (
+        void)
+{
+    if (!sensor_is_streaming () && !uvc_stop_applied ())
+    {
+        glStartHeld = CyTrue;
+        return;
+    }
+    glStartHeld = CyFalse;
+    uvc_stream_start ();
+}
+
+static void
+uvc_write_params (
+        void)
+{
+    selected_img_mode->stream_enable =
+        (glIsApplnActive ? STREAM_STATE_ON : STREAM_STATE_OFF) | STREAM_CMD_NONE;
+    sensor_write_config ();
 }
 
 /*
@@ -1308,6 +1389,11 @@ UVCAppThread_Entry (
     uint16_t              wakeReason;
     CyU3PReturnStatus_t   apiRetStatus;
     uint32_t              flag;
+#ifdef DEBUG_PRINT_FRAME_COUNT
+    uint32_t              lastCountMs = 0;
+#endif
+
+    (void)input;
 
     /* Initialize the Uart Debug Module */
     CyFxUVCApplnDebugInit ();
@@ -1326,44 +1412,35 @@ UVCAppThread_Entry (
     /* Initialize the UVC Application */
     CyFxUVCApplnInit ();
 
-    /*
-       The actual data forwarding from sensor to USB host is done from the DMA and GPIF callback
-       functions. The thread is only responsible for checking for streaming start/stop conditions.
-
-       The CY_FX_UVC_STREAM_EVENT event flag will indicate that the UVC video stream should be started.
-
-       The CY_FX_UVC_STREAM_ABORT_EVENT event indicates that we need to abort the video streaming. This
-       only happens when we receive a CLEAR_FEATURE request indicating that streaming is to be stopped,
-       or when we have a critical error in the data path.
-
-       The CY_FX_UVC_DMA_RESET_EVENT indicates that we need to reset the DMA and endpoint buffers and
-       disable GPIF. We restarting the GPIF state machine from first state and device will start streaming
-       video after it receives the next frame. FOr camera applications, if we discard few frames and resatrt
-       video stream, it shouldn't be a problem. It may be a bad user experience if we abruptly stop video stream.
-       Note that we will not restart video stream after few commit buffer failures as this is required for MAC OS.
-
-       The CY_FX_USB_SUSPEND_EVENT_HANDLER indicates that device must enter low power USB suspend mode.
-       There is a provision for users to reset and/or turn OFF power to the sensor/Image signal processor (ISP).
-     */
     for (;;)
     {
+        if (glPipeArmed && glIsApplnActive &&
+            glDmaResetFlag == CY_FX_UVC_DMA_RESET_EVENT_NOT_ACTIVE &&
+            (uint32_t)(CyU3PGetTime () - glLastProdTimeMs) >= CY_FX_UVC_FRAME_TIMEOUT_MS)
+        {
+            glDmaResetFlag = CY_FX_UVC_DMA_RESET_FRAME_TIMER_OVERFLOW;
+            CyU3PEventSet (&glFxUVCEvent, CY_FX_UVC_DMA_RESET_EVENT, CYU3P_EVENT_OR);
+        }
+
         apiRetStatus = CyU3PEventGet (&glFxUVCEvent,
-                CY_FX_UVC_STREAM_ABORT_EVENT |
-                CY_FX_UVC_DMA_RESET_EVENT | CY_FX_USB_SUSPEND_EVENT_HANDLER |
-                CY_FX_UVC_SENSOR_WRITE_EVENT, CYU3P_EVENT_OR_CLEAR, &flag, LOOP_TIMEOUT);
+                CY_FX_UVC_STREAM_ABORT_EVENT | CY_FX_UVC_DMA_RESET_EVENT |
+                CY_FX_USB_SUSPEND_EVENT_HANDLER | CY_FX_UVC_SENSOR_WRITE_EVENT |
+                CY_FX_UVC_FRAME_DONE_EVENT, CYU3P_EVENT_OR_CLEAR, &flag, CY_FX_UVC_LOOP_POLL_MS);
 
         if (apiRetStatus == CY_U3P_SUCCESS)
         {
             CyU3PDebugPrint (6, "[EVT] flags=0x%x active=%d\r\n", flag, glIsApplnActive);
+
+            if ((flag & CY_FX_UVC_FRAME_DONE_EVENT) != 0)
+                glCommitBufferFailureCount = 0;
+
             if ((flag & CY_FX_UVC_SENSOR_WRITE_EVENT) != 0)
             {
                 uint32_t cmd;
-                CyBool_t dirty          = CyFalse;
-                uint8_t  first_action   = 0;
-                uint8_t  last_action    = 0;
-                uint8_t  cmd_count      = 0;
-
-                CyU3PDebugPrint (6, "[Q<] drain start\r\n");
+                CyBool_t dirty       = CyFalse;
+                CyBool_t saw_stop    = CyFalse;
+                uint8_t  last_action = 0;
+                uint8_t  cmd_count   = 0;
 
                 while (cmd_count < SENSOR_CMD_QUEUE_SIZE &&
                        CyU3PQueueReceive (&glSensorCmdQueue, &cmd, CYU3P_NO_WAIT) == CY_U3P_SUCCESS)
@@ -1374,45 +1451,47 @@ UVCAppThread_Entry (
                     switch (SENSOR_CMD_ID(cmd))
                     {
                         case SENSOR_CMD_STREAM_CFG:
-                            CyU3PDebugPrint (6, "[Q<]  CFG frame=%d interval=%d\r\n",
-                                             SENSOR_CMD_VAL8(cmd), glPendingFrameInterval);
                             sensor_handle_uvc_control(SENSOR_CMD_VAL8(cmd), glPendingFrameInterval);
                             sensor_set_auto_flags(all_auto_flags());
+                            sensor_set_gamma_x100(CHC5_GAMMA_CURVE_ADJ | glGammaX100);
                             dirty = CyTrue;
                             break;
 
                         case SENSOR_CMD_STREAM_START:
-                            if (first_action == 0) first_action = 1;
                             last_action = 1;
-                            CyU3PDebugPrint (6, "[Q<]  START (first=%d last=%d)\r\n", first_action, last_action);
                             break;
 
                         case SENSOR_CMD_STREAM_STOP:
-                            if (first_action == 0) first_action = 2;
                             last_action = 2;
-                            CyU3PDebugPrint (6, "[Q<]  STOP (first=%d last=%d)\r\n", first_action, last_action);
+                            saw_stop    = CyTrue;
+                            break;
+
+                        case SENSOR_CMD_ABORT:
+                            last_action = 3;
+                            saw_stop    = CyTrue;
                             break;
 
                         case SENSOR_CMD_GAIN:
-                            CyU3PDebugPrint (6, "[Q<]  GAIN=%d\r\n", SENSOR_CMD_VAL16(cmd));
                             sensor_set_analog_gain(SENSOR_CMD_VAL16(cmd));
                             dirty = CyTrue;
                             break;
 
                         case SENSOR_CMD_EXPOSURE:
-                            CyU3PDebugPrint (6, "[Q<]  EXPOSURE=%d us\r\n", (uint16_t)(glPendingExposure & 0xFFFF));
                             sensor_set_exposure(glPendingExposure);
                             dirty = CyTrue;
                             break;
 
+                        case SENSOR_CMD_GAMMA:
+                            sensor_set_gamma_x100(CHC5_GAMMA_CURVE_ADJ | SENSOR_CMD_VAL16(cmd));
+                            dirty = CyTrue;
+                            break;
+
                         case SENSOR_CMD_TEST_PATTERN:
-                            CyU3PDebugPrint (6, "[Q<]  TEST_PATTERN=%d\r\n", SENSOR_CMD_VAL8(cmd));
                             sensor_set_test_pattern(SENSOR_CMD_VAL8(cmd));
                             dirty = CyTrue;
                             break;
 
                         case SENSOR_CMD_AUTO:
-                            CyU3PDebugPrint (6, "[Q<]  AUTO=0x%x\r\n", SENSOR_CMD_VAL8(cmd));
                             sensor_set_auto_flags(SENSOR_CMD_VAL8(cmd));
                             dirty = CyTrue;
                             break;
@@ -1423,174 +1502,90 @@ UVCAppThread_Entry (
                     }
                 }
 
-                CyU3PDebugPrint (6, "[WR] cmds=%d first=%d last=%d dirty=%d active=%d\r\n",
-                                 cmd_count, first_action, last_action, dirty, glIsApplnActive);
-
-
-                if (first_action == 0)
+                CyU3PDebugPrint (6, "[WR] cmds=%d action=%d dirty=%d active=%d\r\n",
+                                 cmd_count, last_action, dirty, glIsApplnActive);
+                if (last_action == 1)
                 {
-                    if (dirty)
+                    if (saw_stop && (glIsApplnActive || glPipeArmed || sensor_is_streaming ()))
                     {
-                        CyU3PDebugPrint (6, "[WR] params only\r\n");
-                        selected_img_mode->stream_enable =
-                            (glIsApplnActive ? STREAM_STATE_ON : STREAM_STATE_OFF) | STREAM_CMD_NONE;
-                        sensor_write_config();
+                        glLedHardStop = CyFalse;
+                        uvc_stream_stop ();
                     }
-                    else
-                    {
-                        CyU3PDebugPrint (6, "[WR] nothing to write\r\n");
-                    }
+                    uvc_request_start ();
                 }
-                else if (first_action == last_action)
+                else if (last_action >= 2)
                 {
-                    if (first_action == 1)
-                    {
-                        CyU3PDebugPrint (6, "[WR] start (+params)\r\n");
-                        selected_img_mode->stream_enable =
-                            (glIsApplnActive ? STREAM_STATE_ON : STREAM_STATE_OFF) | STREAM_CMD_START;
-                        sensor_write_config();
-                        glIsApplnActive = CyTrue;
-#if LED_STATUS_ENABLED
-                        led_status_poke();
-#endif
-                        CyFxUvcApplnStart();
-                    }
-                    else
-                    {
-                        CyU3PDebugPrint (6, "[WR] stop\r\n");
-                        selected_img_mode->stream_enable =
-                            (glIsApplnActive ? STREAM_STATE_ON : STREAM_STATE_OFF) | STREAM_CMD_STOP;
-                        sensor_write_config();
-                        glIsApplnActive = CyFalse;
-#if LED_STATUS_ENABLED
-                led_status_poke();
-#endif
-#if LED_STATUS_ENABLED
-                        led_status_poke();
-#endif
-                    }
+                    glStartHeld   = CyFalse;
+                    glLedHardStop = CyFalse;
+                    if (glIsApplnActive || glPipeArmed || sensor_is_streaming ())
+                        uvc_stream_stop ();
+                    else if (dirty || last_action == 2)
+                        uvc_write_params ();
                 }
-                else
+                else if (dirty)
                 {
-                    if (first_action == 1)
-                    {
-                        CyU3PDebugPrint (6, "[WR] start+params then stop (2 writes)\r\n");
-                        selected_img_mode->stream_enable =
-                            (glIsApplnActive ? STREAM_STATE_ON : STREAM_STATE_OFF) | STREAM_CMD_START;
-                        sensor_write_config();
-                        glIsApplnActive = CyTrue;
-#if LED_STATUS_ENABLED
-                        led_status_poke();
-#endif
-                        CyFxUvcApplnStart();
-
-                        selected_img_mode->stream_enable = STREAM_STATE_ON | STREAM_CMD_STOP;
-                        sensor_write_config();
-                        glIsApplnActive = CyFalse;
-#if LED_STATUS_ENABLED
-                led_status_poke();
-#endif
-#if LED_STATUS_ENABLED
-                        led_status_poke();
-#endif
-                    }
-                    else
-                    {
-                        CyU3PDebugPrint (6, "[WR] stop then start+params (2 writes)\r\n");
-                        selected_img_mode->stream_enable =
-                            (glIsApplnActive ? STREAM_STATE_ON : STREAM_STATE_OFF) | STREAM_CMD_STOP;
-                        sensor_write_config();
-                        glIsApplnActive = CyFalse;
-#if LED_STATUS_ENABLED
-                led_status_poke();
-#endif
-#if LED_STATUS_ENABLED
-                        led_status_poke();
-#endif
-
-                        selected_img_mode->stream_enable = STREAM_STATE_OFF | STREAM_CMD_START;
-                        sensor_write_config();
-                        glIsApplnActive = CyTrue;
-#if LED_STATUS_ENABLED
-                        led_status_poke();
-#endif
-                        CyFxUvcApplnStart();
-                    }
+                    uvc_write_params ();
                 }
             }
 
             if ((flag & CY_FX_UVC_STREAM_ABORT_EVENT) != 0)
             {
-                CyU3PDebugPrint (6, "[ABORT] active=%d stream_en=0x%x\r\n",
-                                 glIsApplnActive, selected_img_mode->stream_enable);
+                uint32_t discard;
+                uint8_t  discarded = 0;
 
-                {
-                    uint32_t discard;
-                    uint8_t discarded = 0;
-                    while (CyU3PQueueReceive (&glSensorCmdQueue, &discard, CYU3P_NO_WAIT) == CY_U3P_SUCCESS)
-                        discarded++;
-                    if (discarded)
-                        CyU3PDebugPrint (6, "[ABORT] flushed %d queued cmds\r\n", discarded);
-                }
+                while (CyU3PQueueReceive (&glSensorCmdQueue, &discard, CYU3P_NO_WAIT) == CY_U3P_SUCCESS)
+                    discarded++;
+                CyU3PDebugPrint (6, "[ABORT] active=%d armed=%d flushed=%d\r\n",
+                                 glIsApplnActive, glPipeArmed, discarded);
+                glStartHeld   = CyFalse;
+                glLedHardStop = CyFalse;
+                if (glIsApplnActive || glPipeArmed || sensor_is_streaming ())
+                    uvc_stream_stop ();
+            }
 
-                if (glIsApplnActive)
+            if (((flag & CY_FX_UVC_DMA_RESET_EVENT) != 0) && glIsApplnActive && glPipeArmed)
+            {
+                uint8_t  cause = glDmaResetFlag;
+                uint8_t  limit = (cause == CY_FX_UVC_DMA_RESET_FRAME_TIMER_OVERFLOW)
+                                 ? CY_FX_UVC_TIMER_RESTART_LIMIT
+                                 : CY_FX_UVC_MAX_COMMIT_BUF_FAILURE_CNT;
+                CyBool_t giveUp = CyFalse;
+
+                CyU3PDebugPrint (4, "DMA reset: %s\r\n",
+                                 (cause == CY_FX_UVC_DMA_RESET_FRAME_TIMER_OVERFLOW)
+                                 ? "frame timeout" : "commit failure");
+                CyFxUvcApplnStop ();
+
+                if (++glCommitBufferFailureCount < limit)
                 {
-                    selected_img_mode->stream_enable = STREAM_STATE_ON | STREAM_CMD_STOP;
-                    CyU3PDebugPrint (6, "[ABORT] writing stream_enable=0x%x\r\n",
-                                     selected_img_mode->stream_enable);
-                    sensor_write_config();
+                    CyU3PDebugPrint (4, "DMA restart (%d/%d)\r\n", glCommitBufferFailureCount, limit);
+                    if (!CyFxUvcApplnStart ())
+                        giveUp = CyTrue;
                 }
                 else
                 {
-                    CyU3PDebugPrint (6, "[ABORT] already stopped, no write\r\n");
+                    giveUp = CyTrue;
                 }
 
-                glIsApplnActive = CyFalse;
-#if LED_STATUS_ENABLED
-                led_status_poke();
-#endif
-                CyFxUvcApplnStop();
-            }
-
-            if (((flag & CY_FX_UVC_DMA_RESET_EVENT) != 0) && glIsApplnActive)
-            {
-                CyU3PDebugPrint (6, "[DMA] reset, active=1, recovering\r\n");
-                if(glDmaResetFlag == CY_FX_UVC_DMA_RESET_COMMIT_BUFFER_FAILURE)
-                    CyU3PDebugPrint (6, "[DMA] cause: commit buffer failure\r\n");
-
-#ifdef FRAME_TIMER_ENABLE
-                else if(glDmaResetFlag == CY_FX_UVC_DMA_RESET_FRAME_TIMER_OVERFLOW)
-                    CyU3PDebugPrint (6, "[DMA] cause: frame timer overflow, period=%d\r\n", glFrameTimerPeriod);
-#endif
-
-                CyFxUvcApplnStop();
-
-                if ((glIsApplnActive) && (++glCommitBufferFailureCount < CY_FX_UVC_MAX_COMMIT_BUF_FAILURE_CNT))
+                if (giveUp)
                 {
-                    CyU3PDebugPrint (6, "[DMA] restarting (%d/%d)\r\n", glCommitBufferFailureCount, CY_FX_UVC_MAX_COMMIT_BUF_FAILURE_CNT);
-                    CyFxUvcApplnStart();
-                }
-
-                /* Reset the video streaming flags for a MAC OS */
-                if(glCommitBufferFailureCount == CY_FX_UVC_MAX_COMMIT_BUF_FAILURE_CNT)
-                {
-                    {
-                        uint32_t discard;
-                        while (CyU3PQueueReceive (&glSensorCmdQueue, &discard, CYU3P_NO_WAIT) == CY_U3P_SUCCESS) { }
-                    }
-                    selected_img_mode->stream_enable = STREAM_STATE_ON | STREAM_CMD_STOP;
-                    sensor_write_config();
-
-                    glIsApplnActive = CyFalse;
-#if LED_STATUS_ENABLED
-                led_status_poke();
-#endif
-                    CyU3PDebugPrint (6, "[DMA] giving up after %d failures, sensor stopped\r\n", glCommitBufferFailureCount);
+                    uint32_t discard;
+                    while (CyU3PQueueReceive (&glSensorCmdQueue, &discard, CYU3P_NO_WAIT) == CY_U3P_SUCCESS) { }
+                    glStartHeld = CyFalse;
+                    CyU3PDebugPrint (4, "Giving up after %d DMA failures, stopping sensor\r\n",
+                                     glCommitBufferFailureCount);
                     glCommitBufferFailureCount = 0;
+                    uvc_stream_stop ();
+                    CyU3PGpifDisable (CyTrue);
+                    glLedHardStop = CyTrue;
+#if LED_STATUS_ENABLED
+                    led_status_poke();
+#endif
                 }
             }
             else if ((flag & CY_FX_UVC_DMA_RESET_EVENT) != 0)
             {
+                glDmaResetFlag = CY_FX_UVC_DMA_RESET_EVENT_NOT_ACTIVE;
                 CyU3PDebugPrint (6, "[DMA] reset ignored, active=0\r\n");
             }
 
@@ -1629,9 +1624,32 @@ UVCAppThread_Entry (
             }
         }
 
+        if (glStopRetry && !glIsApplnActive &&
+            (uint32_t)(CyU3PGetTime () - glStopRetryMs) >= CY_FX_UVC_STOP_RETRY_MS)
+        {
+            CyBool_t wrote = CyFalse;
+            glStopRetryMs = CyU3PGetTime ();
+            if (!sensor_is_streaming () || (wrote = sensor_stream_stop ()))
+            {
+                glStopRetry = CyFalse;
+                if (wrote)
+                    uvc_stop_ack_arm ();
+                CyU3PDebugPrint (4, "STOP delivered on retry\r\n");
+            }
+        }
+
+        if (glStartHeld)
+            uvc_request_start ();
+
+        uvc_start_ack_poll ();
+
 #ifdef DEBUG_PRINT_FRAME_COUNT
-        CyU3PDebugPrint (4, "UVC: Completed %d frames and %d buffers\r\n", glFrameCount,
-                (glDmaDone != 0) ? (glDmaDone - 1) : 0);
+        if ((uint32_t)(CyU3PGetTime () - lastCountMs) >= 1000u)
+        {
+            lastCountMs = CyU3PGetTime ();
+            CyU3PDebugPrint (4, "UVC: Completed %d frames and %d buffers\r\n", glFrameCount,
+                    (glDmaDone != 0) ? (glDmaDone - 1) : 0);
+        }
 #endif
     }
 }
@@ -1661,7 +1679,7 @@ UVCHandleProcessingUnitRqts (
         void)
 {
     CyU3PReturnStatus_t apiRetStatus = CY_U3P_SUCCESS;
-    uint16_t readCount, gainVal, tpVal;
+    uint16_t readCount, gainVal;
     switch (wValue)
     {
         case CY_FX_UVC_PU_WHITE_BALANCE_TEMPERATURE_AUTO_CONTROL:
@@ -1755,63 +1773,43 @@ UVCHandleProcessingUnitRqts (
 
         case CY_FX_UVC_PU_GAMMA_CONTROL:
         {
-        	switch (bRequest)
-        	{
-        	case CY_FX_USB_UVC_GET_LEN_REQ:
-        		glEp0Buffer[0] = 2;
-        		glEp0Buffer[1] = 0;
-        		CyU3PUsbSendEP0Data (2, (uint8_t *)glEp0Buffer);
-        		break;
-        	case CY_FX_USB_UVC_GET_CUR_REQ:
-        		glEp0Buffer[0] = sensor_get_test_pattern();
-        		glEp0Buffer[1] = 0;
-        		CyU3PUsbSendEP0Data (2, (uint8_t *)glEp0Buffer);
-        		break;
-        	case CY_FX_USB_UVC_GET_MIN_REQ:
-        		glEp0Buffer[0] = 0;
-        		glEp0Buffer[1] = 0;
-        		CyU3PUsbSendEP0Data (2, (uint8_t *)glEp0Buffer);
-        		break;
-        	case CY_FX_USB_UVC_GET_MAX_REQ:
-        		glEp0Buffer[0] = 8;
-        		glEp0Buffer[1] = 0;
-        		CyU3PUsbSendEP0Data (2, (uint8_t *)glEp0Buffer);
-        		break;
-        	case CY_FX_USB_UVC_GET_RES_REQ:
-        		glEp0Buffer[0] = 1;
-        		glEp0Buffer[1] = 0;
-        		CyU3PUsbSendEP0Data (2, (uint8_t *)glEp0Buffer);
-        		break;
-        	case CY_FX_USB_UVC_GET_INFO_REQ:
-        		glEp0Buffer[0] = 3;
-        		glEp0Buffer[1] = 0;
-        		CyU3PUsbSendEP0Data (2, (uint8_t *)glEp0Buffer);
-        		break;
-        	case CY_FX_USB_UVC_GET_DEF_REQ:
-        		glEp0Buffer[0] = 0;
-        		glEp0Buffer[1] = 0;
-        		CyU3PUsbSendEP0Data (2, (uint8_t *)glEp0Buffer);
-        		break;
-        	case CY_FX_USB_UVC_SET_CUR_REQ:
-        		apiRetStatus = CyU3PUsbGetEP0Data (CY_FX_UVC_MAX_PROBE_SETTING_ALIGNED,
-        				glEp0Buffer, &readCount);
-        		if (apiRetStatus == CY_U3P_SUCCESS)
-        		{
-        			tpVal = CY_U3P_MAKEWORD(glEp0Buffer[1], glEp0Buffer[0]);
-        			if(tpVal <= 8)
-        			{
-        				sensor_cmd_enqueue(SENSOR_CMD_TEST_PATTERN | glEp0Buffer[0]);
-        				sensor_cmd_flush();
-        			}
-        		}
-        		break;
-        	default:
-        		glUvcVcErrorCode = CY_FX_UVC_VC_ERROR_CODE_INVALID_REQUEST;
-        		CyU3PUsbStall (0, CyTrue, CyFalse);
-        		break;
-        	}
-        	break;
+            uint16_t val = UVC_GAMMA_DEF;
+            switch (bRequest)
+            {
+                case CY_FX_USB_UVC_GET_CUR_REQ: val = glGammaX100;    break;
+                case CY_FX_USB_UVC_GET_MIN_REQ: val = UVC_GAMMA_MIN;  break;
+                case CY_FX_USB_UVC_GET_MAX_REQ: val = UVC_GAMMA_MAX;  break;
+                case CY_FX_USB_UVC_GET_RES_REQ: val = 1;              break;
+                case CY_FX_USB_UVC_GET_DEF_REQ: val = UVC_GAMMA_DEF;  break;
+                case CY_FX_USB_UVC_GET_INFO_REQ:
+                    glEp0Buffer[0] = 3;
+                    CyU3PUsbSendEP0Data (1, (uint8_t *)glEp0Buffer);
+                    return;
+                case CY_FX_USB_UVC_SET_CUR_REQ:
+                    apiRetStatus = CyU3PUsbGetEP0Data (CY_FX_UVC_MAX_PROBE_SETTING_ALIGNED,
+                            glEp0Buffer, &readCount);
+                    if (apiRetStatus == CY_U3P_SUCCESS && readCount >= 2)
+                    {
+                        val = CY_U3P_MAKEWORD(glEp0Buffer[1], glEp0Buffer[0]);
+                        if (val >= UVC_GAMMA_MIN && val <= UVC_GAMMA_MAX)
+                        {
+                            glGammaX100 = val;
+                            sensor_cmd_enqueue(SENSOR_CMD_GAMMA | val);
+                            sensor_cmd_flush();
+                        }
+                    }
+                    return;
+                default:
+                    glUvcVcErrorCode = CY_FX_UVC_VC_ERROR_CODE_INVALID_REQUEST;
+                    CyU3PUsbStall (0, CyTrue, CyFalse);
+                    return;
+            }
+            glEp0Buffer[0] = (uint8_t)(val & 0xFF);
+            glEp0Buffer[1] = (uint8_t)(val >> 8);
+            CyU3PUsbSendEP0Data (2, (uint8_t *)glEp0Buffer);
+            break;
         }
+
         default:
             glUvcVcErrorCode = CY_FX_UVC_VC_ERROR_CODE_INVALID_CONTROL;
             CyU3PUsbStall (0, CyTrue, CyFalse);
@@ -1856,9 +1854,9 @@ UVCHandleCameraTerminalRqts (
                     CyU3PUsbSendEP0Data (1, (uint8_t *)glEp0Buffer);
                     break;
                 case CY_FX_USB_UVC_SET_CUR_REQ:
-                    CyU3PUsbGetEP0Data (CY_FX_UVC_MAX_PROBE_SETTING_ALIGNED,
-                            glEp0Buffer, &readCount);
-                    if (glEp0Buffer[0] == 0x01 || glEp0Buffer[0] == 0x02)
+                    if (CyU3PUsbGetEP0Data (CY_FX_UVC_MAX_PROBE_SETTING_ALIGNED,
+                                glEp0Buffer, &readCount) == CY_U3P_SUCCESS &&
+                        (glEp0Buffer[0] == 0x01 || glEp0Buffer[0] == 0x02))
                     {
                         glAeMode = glEp0Buffer[0];
                         sensor_cmd_enqueue(SENSOR_CMD_AUTO | ae_auto_flags());
@@ -1882,8 +1880,12 @@ UVCHandleCameraTerminalRqts (
                     break;
                 case CY_FX_USB_UVC_GET_CUR_REQ:
                 {
-                    uint32_t val = uvc_live_exposure();
-                    if (!val) val = sensor_get_exposure();
+                    uint32_t us = uvc_live_exposure();
+                    uint32_t val;
+                    if (!us) us = sensor_get_exposure();
+                    val = (us + UVC_EXPOSURE_UNIT_US / 2u) / UVC_EXPOSURE_UNIT_US;
+                    if (val < 1u)
+                        val = 1u;
                     glEp0Buffer[0] = (val)       & 0xFF;
                     glEp0Buffer[1] = (val >> 8)  & 0xFF;
                     glEp0Buffer[2] = (val >> 16) & 0xFF;
@@ -1899,10 +1901,10 @@ UVCHandleCameraTerminalRqts (
                     CyU3PUsbSendEP0Data (4, (uint8_t *)glEp0Buffer);
                     break;
                 case CY_FX_USB_UVC_GET_MAX_REQ:
-                    glEp0Buffer[0] = 0x90;
-                    glEp0Buffer[1] = 0xD0;
-                    glEp0Buffer[2] = 0x03;
-                    glEp0Buffer[3] = 0x00;
+                    glEp0Buffer[0] = (UVC_EXPOSURE_MAX_UNITS)       & 0xFF;
+                    glEp0Buffer[1] = (UVC_EXPOSURE_MAX_UNITS >> 8)  & 0xFF;
+                    glEp0Buffer[2] = (UVC_EXPOSURE_MAX_UNITS >> 16) & 0xFF;
+                    glEp0Buffer[3] = (UVC_EXPOSURE_MAX_UNITS >> 24) & 0xFF;
                     CyU3PUsbSendEP0Data (4, (uint8_t *)glEp0Buffer);
                     break;
                 case CY_FX_USB_UVC_GET_RES_REQ:
@@ -1917,15 +1919,12 @@ UVCHandleCameraTerminalRqts (
                     CyU3PUsbSendEP0Data (1, (uint8_t *)glEp0Buffer);
                     break;
                 case CY_FX_USB_UVC_GET_DEF_REQ:
-                {
-                    uint32_t def = 33000;
-                    glEp0Buffer[0] = (def)       & 0xFF;
-                    glEp0Buffer[1] = (def >> 8)  & 0xFF;
-                    glEp0Buffer[2] = (def >> 16) & 0xFF;
-                    glEp0Buffer[3] = (def >> 24) & 0xFF;
+                    glEp0Buffer[0] = (UVC_EXPOSURE_DEF_UNITS)       & 0xFF;
+                    glEp0Buffer[1] = (UVC_EXPOSURE_DEF_UNITS >> 8)  & 0xFF;
+                    glEp0Buffer[2] = (UVC_EXPOSURE_DEF_UNITS >> 16) & 0xFF;
+                    glEp0Buffer[3] = (UVC_EXPOSURE_DEF_UNITS >> 24) & 0xFF;
                     CyU3PUsbSendEP0Data (4, (uint8_t *)glEp0Buffer);
                     break;
-                }
                 case CY_FX_USB_UVC_SET_CUR_REQ:
                 {
                     CyU3PReturnStatus_t status;
@@ -1933,10 +1932,15 @@ UVCHandleCameraTerminalRqts (
                             glEp0Buffer, &readCount);
                     if (status == CY_U3P_SUCCESS)
                     {
-                        glPendingExposure = glEp0Buffer[0]
-                                          | (glEp0Buffer[1] << 8)
-                                          | (glEp0Buffer[2] << 16)
-                                          | (glEp0Buffer[3] << 24);
+                        uint32_t val = glEp0Buffer[0]
+                                     | (glEp0Buffer[1] << 8)
+                                     | (glEp0Buffer[2] << 16)
+                                     | ((uint32_t)glEp0Buffer[3] << 24);
+                        if (val < 1u)
+                            val = 1u;
+                        if (val > UVC_EXPOSURE_MAX_UNITS)
+                            val = UVC_EXPOSURE_MAX_UNITS;
+                        glPendingExposure = val * UVC_EXPOSURE_UNIT_US;
                         sensor_cmd_enqueue(SENSOR_CMD_EXPOSURE);
                         sensor_cmd_flush();
                     }
@@ -2099,69 +2103,58 @@ UVCHandleInterfaceCtrlRqts (
     }
 }
 
-/*
- * Handler for control requests addressed to the Extension Unit.
- */
 static void
 UVCHandleExtensionUnitRqts (
         void)
 {
-#ifdef UVC_EXTENSION_UNIT
-    CyU3PReturnStatus_t apiRetStatus = CY_U3P_SUCCESS;
     uint16_t readCount;
-    CyBool_t sendData = CyFalse;
-#endif
 
     switch (wValue)
     {
-#ifdef UVC_EXTENSION_UNIT
-        case CY_FX_UVC_XU_GET_FIRMWARE_VERSION_CONTROL:
+        case CY_FX_UVC_XU_TEST_PATTERN_CONTROL:
             switch (bRequest)
             {
                 case CY_FX_USB_UVC_GET_INFO_REQ:
-                    glEp0Buffer[0] = 3;                /* Support GET/SET queries. */
+                    glEp0Buffer[0] = 3;
                     CyU3PUsbSendEP0Data (1, (uint8_t *)glEp0Buffer);
                     break;
-                case CY_FX_USB_UVC_GET_CUR_REQ: /* Current firmware version control value. */
-                    CyU3PMemCopy(glEp0Buffer, glFxUvcFirmwareVersion, 5);
-                    sendData = CyTrue;
-                    break;
-                case CY_FX_USB_UVC_GET_MIN_REQ: /* Minimum firmware version control value. */
-                    /* Min value is version 0.1 Build date: 1/1/17 */
-                    glEp0Buffer[0] = 0;
-                    CyU3PMemSet(&glEp0Buffer[1], 1, 3);
-                    glEp0Buffer[4] = 17;
-                    sendData = CyTrue;
-                    break;
-                case CY_FX_USB_UVC_GET_MAX_REQ: /* Maximum firmware version control value. */
-                    /* Max value is version 255.255 Build date: 12/31/99 */
-                    CyU3PMemSet(glEp0Buffer, 0xFF, 2);
-                    glEp0Buffer[2] = 12;
-                    glEp0Buffer[3] = 31;
-                    glEp0Buffer[4] = 99;
-                    sendData = CyTrue;
-                    break;
-                case CY_FX_USB_UVC_GET_RES_REQ: /* Resolution is one unit for all the fields */
-                    CyU3PMemSet(glEp0Buffer, 1, 5);
-                    sendData = CyTrue;
-                    break;
-                case CY_FX_USB_UVC_GET_LEN_REQ: /* Length of the control */
-                    /* As per UVC spec, we send 2 bytes of data. Firmware version control length is 5 bytes */
-                    glEp0Buffer[0] = 5;
+                case CY_FX_USB_UVC_GET_LEN_REQ:
+                    glEp0Buffer[0] = 1;
                     glEp0Buffer[1] = 0;
                     CyU3PUsbSendEP0Data (2, (uint8_t *)glEp0Buffer);
                     break;
-                case CY_FX_USB_UVC_GET_DEF_REQ: /* Default firmware version setting, is the current value. But it can be changed */
-                    CyU3PMemCopy(glEp0Buffer, glFxUvcFirmwareVersion, 5);
-                    sendData = CyTrue;
+                case CY_FX_USB_UVC_GET_CUR_REQ:
+                    glEp0Buffer[0] = sensor_get_test_pattern ();
+                    CyU3PUsbSendEP0Data (1, (uint8_t *)glEp0Buffer);
+                    break;
+                case CY_FX_USB_UVC_GET_MIN_REQ:
+                case CY_FX_USB_UVC_GET_DEF_REQ:
+                    glEp0Buffer[0] = 0;
+                    CyU3PUsbSendEP0Data (1, (uint8_t *)glEp0Buffer);
+                    break;
+                case CY_FX_USB_UVC_GET_MAX_REQ:
+                    glEp0Buffer[0] = g_uvc_tp_max;
+                    CyU3PUsbSendEP0Data (1, (uint8_t *)glEp0Buffer);
+                    break;
+                case CY_FX_USB_UVC_GET_RES_REQ:
+                    glEp0Buffer[0] = 1;
+                    CyU3PUsbSendEP0Data (1, (uint8_t *)glEp0Buffer);
                     break;
                 case CY_FX_USB_UVC_SET_CUR_REQ:
-                    apiRetStatus = CyU3PUsbGetEP0Data (CY_FX_UVC_MAX_PROBE_SETTING_ALIGNED,
-                            glEp0Buffer, &readCount);
-                    if (apiRetStatus == CY_U3P_SUCCESS)
+                    if (CyU3PUsbGetEP0Data (CY_FX_UVC_MAX_PROBE_SETTING_ALIGNED,
+                                glEp0Buffer, &readCount) != CY_U3P_SUCCESS || readCount < 1)
+                        break;
+#if UVC_TEST_HOOKS
+                    if (glEp0Buffer[0] & 0x80)
                     {
-                        /* Copy firmware version sent by Host application */
-                        CyU3PMemCopy(glFxUvcFirmwareVersion, glEp0Buffer, 5);
+                        g_test_start_hook = glEp0Buffer[0] & 0x03;
+                        break;
+                    }
+#endif
+                    if (glEp0Buffer[0] <= g_uvc_tp_max)
+                    {
+                        sensor_cmd_enqueue (SENSOR_CMD_TEST_PATTERN | glEp0Buffer[0]);
+                        sensor_cmd_flush ();
                     }
                     break;
                 default:
@@ -2169,14 +2162,7 @@ UVCHandleExtensionUnitRqts (
                     CyU3PUsbStall (0, CyTrue, CyFalse);
                     break;
             }
-
-            if (sendData)
-            {
-                /* Send the data to the USB host. */
-                CyU3PUsbSendEP0Data (5, (uint8_t *)glEp0Buffer);
-            }
             break;
-#endif
 
         default:
             glUvcVcErrorCode = CY_FX_UVC_VC_ERROR_CODE_INVALID_CONTROL;
@@ -2192,6 +2178,7 @@ static void UVCHandleVideoStreamingRqts (void)
 {
     CyU3PReturnStatus_t apiRetStatus = CY_U3P_SUCCESS;
     uint16_t readCount;
+    uint8_t *activeProbe = (usbSpeed == CY_U3P_SUPER_SPEED) ? glProbeCtrl : glProbeCtrl20;
 
     switch (wValue)
     {
@@ -2210,42 +2197,19 @@ static void UVCHandleVideoStreamingRqts (void)
                 case CY_FX_USB_UVC_GET_MIN_REQ:
                 case CY_FX_USB_UVC_GET_MAX_REQ:
                 case CY_FX_USB_UVC_GET_DEF_REQ: /* There is only one setting per USB speed. */
-                    if (usbSpeed == CY_U3P_SUPER_SPEED)
-                    {
-                        CyU3PUsbSendEP0Data (CY_FX_UVC_MAX_PROBE_SETTING, (uint8_t *)glProbeCtrl);
-                    }
-                    else
-                    {
-                        CyU3PUsbSendEP0Data (CY_FX_UVC_MAX_PROBE_SETTING, (uint8_t *)glProbeCtrl20);
-                    }
+                    CyU3PUsbSendEP0Data (CY_FX_UVC_MAX_PROBE_SETTING, activeProbe);
                     break;
                 case CY_FX_USB_UVC_SET_CUR_REQ:
                     apiRetStatus = CyU3PUsbGetEP0Data (CY_FX_UVC_MAX_PROBE_SETTING_ALIGNED, glCommitCtrl, &readCount);
                     if (apiRetStatus == CY_U3P_SUCCESS)
                     {
-                        uint8_t *activeProbe = (usbSpeed == CY_U3P_SUPER_SPEED) ? glProbeCtrl : glProbeCtrl20;
-
-                        /* Copy the relevant settings from the host provided data into the
-                           active data structure. */
                         activeProbe[2] = glCommitCtrl[2];
                         activeProbe[3] = glCommitCtrl[3];
                         activeProbe[4] = glCommitCtrl[4];
                         activeProbe[5] = glCommitCtrl[5];
                         activeProbe[6] = glCommitCtrl[6];
                         activeProbe[7] = glCommitCtrl[7];
-
-                        {
-                            uint8_t fi = activeProbe[3];
-                            if (fi >= 1 && fi <= g_uvc_nmodes)
-                            {
-                                uint32_t fsz = (uint32_t)g_uvc_modes[fi - 1].width
-                                             * (uint32_t)g_uvc_modes[fi - 1].height * 2u;
-                                activeProbe[18] = (uint8_t)(fsz);
-                                activeProbe[19] = (uint8_t)(fsz >> 8);
-                                activeProbe[20] = (uint8_t)(fsz >> 16);
-                                activeProbe[21] = (uint8_t)(fsz >> 24);
-                            }
-                        }
+                        uvc_negotiate (activeProbe);
                     }
                     break;
                 default:
@@ -2266,39 +2230,30 @@ static void UVCHandleVideoStreamingRqts (void)
                     CyU3PUsbSendEP0Data (1, (uint8_t *)glEp0Buffer);
                     break;
                 case CY_FX_USB_UVC_GET_CUR_REQ:
-                    if (usbSpeed == CY_U3P_SUPER_SPEED)
-                    {
-                        CyU3PUsbSendEP0Data (CY_FX_UVC_MAX_PROBE_SETTING, (uint8_t *)glProbeCtrl);
-                    }
-                    else
-                    {
-                        CyU3PUsbSendEP0Data (CY_FX_UVC_MAX_PROBE_SETTING, (uint8_t *)glProbeCtrl20);
-                    }
+                    CyU3PUsbSendEP0Data (CY_FX_UVC_MAX_PROBE_SETTING, activeProbe);
                     break;
                 case CY_FX_USB_UVC_SET_CUR_REQ:
-                    /* The host has selected the parameters for the video stream. Check the desired
-                       resolution settings, configure the sensor and start the video stream.
-                       */
                     apiRetStatus = CyU3PUsbGetEP0Data (CY_FX_UVC_MAX_PROBE_SETTING_ALIGNED, glCommitCtrl, &readCount);
                     if (apiRetStatus == CY_U3P_SUCCESS)
                     {
-                    	uvc_control_t *uvc_control = (uvc_control_t *)glCommitCtrl;
-		        if (uvc_control->frame_index != 0 && uvc_control->frame_interval != 0)
-			{
-			        glPendingFrameInterval = uvc_control->frame_interval;
-
-			        #ifdef FRAME_TIMER_ENABLE
-			        glFrameTimerPeriod = CY_FX_UVC_FRAME_TIMER_VAL_400MS;
-			        #endif
-
-			        sensor_cmd_enqueue(SENSOR_CMD_STREAM_CFG | uvc_control->frame_index);
-			        sensor_cmd_enqueue(SENSOR_CMD_STREAM_START);
-			        sensor_cmd_flush();
+                        if (glCommitCtrl[3] == 0)
+                        {
+                            sensor_cmd_enqueue(SENSOR_CMD_STREAM_STOP);
+                            sensor_cmd_flush();
                         }
                         else
                         {
-                        	sensor_cmd_enqueue(SENSOR_CMD_STREAM_STOP);
-                        	sensor_cmd_flush();
+                            uint8_t fi = uvc_negotiate (glCommitCtrl);
+
+                            CyU3PMemCopy (activeProbe, glCommitCtrl, CY_FX_UVC_MAX_PROBE_SETTING);
+                            glPendingFrameInterval = (uint32_t)glCommitCtrl[4] |
+                                                     ((uint32_t)glCommitCtrl[5] << 8) |
+                                                     ((uint32_t)glCommitCtrl[6] << 16) |
+                                                     ((uint32_t)glCommitCtrl[7] << 24);
+
+                            sensor_cmd_enqueue(SENSOR_CMD_STREAM_CFG | fi);
+                            sensor_cmd_enqueue(SENSOR_CMD_STREAM_START);
+                            sensor_cmd_flush();
                         }
                     }
                     break;
@@ -2342,6 +2297,8 @@ UVCAppEP0Thread_Entry (
 
             if (eventFlag & CY_FX_UVC_VIDEO_CONTROL_REQUEST_EVENT)
             {
+                if (bRequest == CY_FX_USB_UVC_SET_CUR_REQ)
+                    uvc_readback_touch();
                 switch ((wIndex >> 8))
                 {
                     case CY_FX_UVC_PROCESSING_UNIT_ID:
@@ -2375,6 +2332,8 @@ UVCAppEP0Thread_Entry (
                 }
                 else
                 {
+                    if (bRequest == CY_FX_USB_UVC_SET_CUR_REQ)
+                        uvc_readback_touch();
                     UVCHandleVideoStreamingRqts ();
                 }
             }
@@ -2482,7 +2441,7 @@ CyFxApplicationDefine (
 
     /* Allocate the memory for the thread stacks. */
     ptr1 = CyU3PMemAlloc (UVC_APP_THREAD_STACK);
-    ptr2 = CyU3PMemAlloc (UVC_APP_THREAD_STACK);
+    ptr2 = CyU3PMemAlloc (UVC_APP_EP0_THREAD_STACK);
     if ((ptr1 == 0) || (ptr2 == 0))
         goto fatalErrorHandler;
 
@@ -2604,11 +2563,14 @@ led_state_t led_state_source(CyBool_t *link_degraded_out)
     if (glLedFatal)
         return LED_ST_FATAL;
 
-    if (glCommitBufferFailureCount >= CY_FX_UVC_MAX_COMMIT_BUF_FAILURE_CNT)
+    if (glLedHardStop)
         return LED_ST_FAULT;
 
     if (glIsApplnActive) {
         if (glCommitBufferFailureCount)
+            return LED_ST_NO_FRAMES;
+        if (glPipeArmed &&
+            (uint32_t)(CyU3PGetTime () - glLastProdTimeMs) >= CY_FX_UVC_FRAME_TIMEOUT_MS)
             return LED_ST_NO_FRAMES;
         return LED_ST_STREAMING;
     }

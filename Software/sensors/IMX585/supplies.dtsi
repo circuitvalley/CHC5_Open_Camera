@@ -6,14 +6,17 @@
  * https://creativecommons.org/licenses/by-nc-nd/4.0/
  */
 
-clk_37m125: clock_37m125 {
+#include "common/cam_power.dtsi"
+
+clk_24m: clock_24m {
 	compatible = "fixed-clock";
 	#clock-cells = <0x00>;
-	clock-frequency = <0x2367b88>;
+	clock-frequency = <0x16e3600>;
 };
 
 imx585_vana: fixedregulator@3 {
 	compatible = "regulator-fixed";
+	CHC5_CAM_VIN
 	regulator-name = "imx585_vana";
 	regulator-min-microvolt = <0x325aa0>;
 	regulator-max-microvolt = <0x325aa0>;
@@ -22,6 +25,7 @@ imx585_vana: fixedregulator@3 {
 
 imx585_vdig: fixedregulator@4 {
 	compatible = "regulator-fixed";
+	CHC5_CAM_VIN
 	regulator-name = "imx585_vdig";
 	regulator-min-microvolt = <0x10c8e0>;
 	regulator-max-microvolt = <0x10c8e0>;
@@ -29,6 +33,7 @@ imx585_vdig: fixedregulator@4 {
 
 imx585_vddl: fixedregulator@5 {
 	compatible = "regulator-fixed";
+	CHC5_CAM_VIN
 	regulator-name = "imx585_vddl";
 	regulator-min-microvolt = <0x1b7740>;
 	regulator-max-microvolt = <0x1b7740>;

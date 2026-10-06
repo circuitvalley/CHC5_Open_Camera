@@ -67,6 +67,8 @@ static const struct chc5_ppck_fmt_entry chc5_ppck_format_table[] = {
 	{ MEDIA_BUS_FMT_Y8_1X8,       CHC5_PPCK_HW_FMT_MONO8,          "MONO8"          },
 	{ MEDIA_BUS_FMT_Y12_1X12,     CHC5_PPCK_HW_FMT_RAW12_PACKED,   "MONO12 packed"  },
 	{ MEDIA_BUS_FMT_Y16_1X16,     CHC5_PPCK_HW_FMT_RAW12_UNPACKED, "MONO12 unpacked"},
+	{ MEDIA_BUS_FMT_Y10_1X10,     CHC5_PPCK_HW_FMT_RAW10_PACKED,   "MONO10 packed"  },
+	{ MEDIA_BUS_FMT_Y14_1X14,     CHC5_PPCK_HW_FMT_RAW14_PACKED,   "MONO14 packed"  },
 	{ MEDIA_BUS_FMT_RGB888_1X32_PADHI, CHC5_PPCK_HW_FMT_XRGB8888,  "XRGB8888"       },
 	{ MEDIA_BUS_FMT_BGR888_1X24,  CHC5_PPCK_HW_FMT_BGR24,          "BGR24"          },
 	{ MEDIA_BUS_FMT_SBGGR8_1X8,   CHC5_PPCK_HW_FMT_RAW8,           "RAW8 (BGGR)"    },
@@ -137,6 +139,40 @@ static const struct chc5_ppck_fmt_entry *chc5_ppck_find_format_by_hw(u32 hw_fmt)
 			return &chc5_ppck_format_table[i];
 	}
 	return NULL;
+}
+
+static bool chc5_ppck_code_is_mono(u32 code)
+{
+	switch (code) {
+	case MEDIA_BUS_FMT_Y8_1X8:
+	case MEDIA_BUS_FMT_Y10_1X10:
+	case MEDIA_BUS_FMT_Y12_1X12:
+	case MEDIA_BUS_FMT_Y14_1X14:
+	case MEDIA_BUS_FMT_Y16_1X16:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool chc5_ppck_active_hw_fmt(const struct chc5_ppck_device *chc5_ppck,
+				    u32 *hw_fmt)
+{
+	u32 source = chc5_ppck->formats[CHC5_PPCK_PAD_SOURCE].code;
+	u32 sink = chc5_ppck->formats[CHC5_PPCK_PAD_SINK].code;
+	const struct chc5_ppck_fmt_entry *entry;
+
+	if (source == MEDIA_BUS_FMT_Y8_1X8 && chc5_ppck_code_is_mono(sink)) {
+		*hw_fmt = CHC5_PPCK_HW_FMT_RAW8;
+		return true;
+	}
+
+	entry = chc5_ppck_find_format_by_code(source);
+	if (!entry)
+		return false;
+
+	*hw_fmt = entry->hw_fmt;
+	return true;
 }
 
 static void chc5_ppck_init_format(struct v4l2_mbus_framefmt *fmt)
@@ -224,7 +260,7 @@ static int chc5_ppck_set_fmt(struct v4l2_subdev *sd,
 {
 	struct chc5_ppck_device *chc5_ppck = to_chc5_ppck(sd);
 	struct v4l2_mbus_framefmt *mbus_fmt;
-	const struct chc5_ppck_fmt_entry *entry;
+	u32 hw_fmt;
 
 	if (fmt->pad >= CHC5_PPCK_NUM_PADS)
 		return -EINVAL;
@@ -240,11 +276,9 @@ static int chc5_ppck_set_fmt(struct v4l2_subdev *sd,
 	} else {
 		chc5_ppck->formats[fmt->pad] = fmt->format;
 
-		if (fmt->pad == CHC5_PPCK_PAD_SOURCE) {
-			entry = chc5_ppck_find_format_by_code(fmt->format.code);
-			if (entry)
-				chc5_ppck_set_hw_fmt(chc5_ppck, entry->hw_fmt);
-		}
+		if (fmt->pad == CHC5_PPCK_PAD_SOURCE &&
+		    chc5_ppck_active_hw_fmt(chc5_ppck, &hw_fmt))
+			chc5_ppck_set_hw_fmt(chc5_ppck, hw_fmt);
 	}
 
 	mutex_unlock(&chc5_ppck->lock);
@@ -267,25 +301,37 @@ static int chc5_ppck_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 static int chc5_ppck_s_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct chc5_ppck_device *chc5_ppck = to_chc5_ppck(sd);
-	const struct chc5_ppck_fmt_entry *entry;
+	const struct chc5_ppck_fmt_entry *entry = NULL;
+	u32 hw_fmt;
 
 	mutex_lock(&chc5_ppck->lock);
 
 	if (enable) {
-		entry = chc5_ppck_find_format_by_code(
-				chc5_ppck->formats[CHC5_PPCK_PAD_SOURCE].code);
-		if (entry)
-			chc5_ppck_set_hw_fmt(chc5_ppck, entry->hw_fmt);
+		hw_fmt = CHC5_PPCK_FMT_MASK + 1;
+		if (chc5_ppck_active_hw_fmt(chc5_ppck, &hw_fmt)) {
+			chc5_ppck_set_hw_fmt(chc5_ppck, hw_fmt);
+			entry = chc5_ppck_find_format_by_code(
+					chc5_ppck->formats[CHC5_PPCK_PAD_SOURCE].code);
+
+			if (chc5_ppck->formats[CHC5_PPCK_PAD_SOURCE].code ==
+			    MEDIA_BUS_FMT_Y8_1X8)
+				dev_info(chc5_ppck->dev,
+					 "Mono8 from the %s (sink 0x%04x)\n",
+					 hw_fmt == CHC5_PPCK_HW_FMT_RAW8 ?
+					 "raw input, top 8 bits" :
+					 "YUV input, Y byte",
+					 chc5_ppck->formats[CHC5_PPCK_PAD_SINK].code);
+		}
 
 		dev_dbg(chc5_ppck->dev,
-			"stream on: sink=%ux%u(0x%04x) source=%ux%u(0x%04x) hw_fmt=%s\n",
+			"stream on: sink=%ux%u(0x%04x) source=%ux%u(0x%04x) hw_fmt=%u (%s)\n",
 			chc5_ppck->formats[CHC5_PPCK_PAD_SINK].width,
 			chc5_ppck->formats[CHC5_PPCK_PAD_SINK].height,
 			chc5_ppck->formats[CHC5_PPCK_PAD_SINK].code,
 			chc5_ppck->formats[CHC5_PPCK_PAD_SOURCE].width,
 			chc5_ppck->formats[CHC5_PPCK_PAD_SOURCE].height,
 			chc5_ppck->formats[CHC5_PPCK_PAD_SOURCE].code,
-			entry ? entry->name : "unknown");
+			hw_fmt, entry ? entry->name : "unknown");
 	} else {
 		dev_dbg(chc5_ppck->dev, "stream off\n");
 	}

@@ -29,7 +29,6 @@
 #include "camera_ptzcontrol.h"
 #include "uvc_settings.h"
 
-
 /* Standard Device Descriptor */
 const uint8_t CyFxUSBDeviceDscr[] =
     {
@@ -41,11 +40,11 @@ const uint8_t CyFxUSBDeviceDscr[] =
         0x01,                           /* Device protocol */
         0x40,                           /* Maxpacket size for EP0 : 64 bytes */
         0xB4,0x04,                      /* Vendor ID */
-        0xF8,0x00,                      /* Product ID */
+        0xF9,0x00,
         0x00,0x00,                      /* Device release number */
         0x01,                           /* Manufacture string index */
         0x02,                           /* Product string index */
-        0x00,                           /* Serial number string index */
+        0x03,                           /* Serial number string index */
         0x01                            /* Number of configurations */
     };
 
@@ -64,7 +63,7 @@ const uint8_t CyFxUSBDeviceDscrSS[] =
         0x00,0x00,                      /* Device release number */
         0x01,                           /* Manufacture string index */
         0x02,                           /* Product string index */
-        0x00,                           /* Serial number string index */
+        0x03,                           /* Serial number string index */
         0x01                            /* Number of configurations */
     };
 
@@ -162,20 +161,19 @@ const uint8_t CyFxUSBFSConfigDscr[] =
         0x00,                           /* String desc index : Not used */
         0x00,                           /* Analog Video Standards Supported: None */
 
-        /* Extension Unit Descriptor */
         0x1C,                           /* Descriptor size */
         0x24,                           /* Class specific interface desc type */
         0x06,                           /* Extension Unit Descriptor type */
-        0x03,                           /* ID of this terminal */
-        0xFF,0xFF,0xFF,0xFF,            /* 16 byte GUID */
-        0xFF,0xFF,0xFF,0xFF,
-        0xFF,0xFF,0xFF,0xFF,
-        0xFF,0xFF,0xFF,0xFF,
-        0x00,                           /* Number of controls in this terminal */
-        0x01,                           /* Number of input pins in this terminal */
+        0x03,
+        0x4C,0x1B,0x1D,0x0D,
+        0x3B,0x5F,0xC5,0x45,
+        0x93,0xEB,0x5F,0xED,
+        0xB4,0xA8,0xCA,0xAF,
+        0x01,
+        0x01,
         0x02,                           /* Source ID : 2 : Connected to Proc Unit */
-        0x03,                           /* Size of controls field for this terminal : 3 bytes */
-        0x00,0x00,0x00,                 /* No controls supported */
+        0x03,
+        0x01,0x00,0x00,
         0x00,                           /* String desc index : Not used */
 
         /* Output Terminal Descriptor */
@@ -346,41 +344,20 @@ const uint8_t CyFxUSBHSConfigDscr[] =
         0x00,                           /* Analog Video Standards Supported: None */
 #endif
 
-#ifdef UVC_EXTENSION_UNIT
-        /* Extension Unit Descriptor */
         0x1C,                           /* Descriptor size */
         0x24,                           /* Class specific interface desc type */
         0x06,                           /* Extension Unit Descriptor type */
-        0x03,                           /* ID of this terminal */
-        //static const GUID <<name>> =
-        //{ 0xacb6890c, 0xa3b3, 0x4060,{ 0x8b, 0x9a, 0xdf, 0x34, 0xee, 0xf3, 0x9a, 0x2e } };
-        0x0C, 0x89, 0xB6, 0xAC,         /* GUID specific to AN75779 firmware. Obtained from Visual studio */
-        0xB3, 0xA3, 0x60, 0x40,
-        0x8B, 0x9A, 0xDF, 0x34,
-        0xEE, 0xF3, 0x9A, 0x2E,
-        0x01,                           /* Number of controls in this terminal */
-        0x01,                           /* Number of input pins in this terminal */
+        0x03,
+        0x4C,0x1B,0x1D,0x0D,
+        0x3B,0x5F,0xC5,0x45,
+        0x93,0xEB,0x5F,0xED,
+        0xB4,0xA8,0xCA,0xAF,
+        0x01,
+        0x01,
         0x02,                           /* Source ID : 2 : Connected to Proc Unit */
-        0x03,                           /* Size of controls field for this terminal : 3 bytes */
-        0x01, 0x00, 0x00,               /* Controls supported */
-        0x00,                           /* String descriptor index : Not used */
-#else
-        /* Extension Unit Descriptor */
-        0x1C,                           /* Descriptor size */
-        0x24,                           /* Class specific interface desc type */
-        0x06,                           /* Extension Unit Descriptor type */
-        0x03,                           /* ID of this terminal */
-        0xFF,0xFF,0xFF,0xFF,            /* 16 byte GUID */
-        0xFF,0xFF,0xFF,0xFF,
-        0xFF,0xFF,0xFF,0xFF,
-        0xFF,0xFF,0xFF,0xFF,
-        0x00,                           /* Number of controls in this terminal */
-        0x01,                           /* Number of input pins in this terminal */
-        0x02,                           /* Source ID : 2 : Connected to Proc Unit */
-        0x03,                           /* Size of controls field for this terminal : 3 bytes */
-        0x00,0x00,0x00,                 /* No controls supported */
+        0x03,
+        0x01,0x00,0x00,
         0x00,                           /* String desc index : Not used */
-#endif
 
         /* Output Terminal Descriptor */
         0x09,                           /* Descriptor size */
@@ -650,41 +627,20 @@ const uint8_t CyFxUSBSSConfigDscr[] =
         0x00,                           /* Analog Video Standards Supported: None */
 #endif
 
-#ifdef UVC_EXTENSION_UNIT
-        /* Extension Unit Descriptor */
         0x1C,                           /* Descriptor size */
         0x24,                           /* Class specific interface desc type */
         0x06,                           /* Extension Unit Descriptor type */
-        0x03,                           /* ID of this terminal */
-        //static const GUID <<name>> =
-        //{ 0xacb6890c, 0xa3b3, 0x4060,{ 0x8b, 0x9a, 0xdf, 0x34, 0xee, 0xf3, 0x9a, 0x2e } };
-        0x0C, 0x89, 0xB6, 0xAC,         /* GUID specific to AN75779 firmware. Obtained from Visual studio */
-        0xB3, 0xA3, 0x60, 0x40,
-        0x8B, 0x9A, 0xDF, 0x34,
-        0xEE, 0xF3, 0x9A, 0x2E,
-        0x01,                           /* Number of controls in this terminal */
-        0x01,                           /* Number of input pins in this terminal */
+        0x03,
+        0x4C,0x1B,0x1D,0x0D,
+        0x3B,0x5F,0xC5,0x45,
+        0x93,0xEB,0x5F,0xED,
+        0xB4,0xA8,0xCA,0xAF,
+        0x01,
+        0x01,
         0x02,                           /* Source ID : 2 : Connected to Proc Unit */
-        0x03,                           /* Size of controls field for this terminal : 3 bytes */
-        0x01, 0x00, 0x00,               /* Controls supported */
-        0x00,                           /* String descriptor index : Not used */
-#else
-        /* Extension Unit Descriptor */
-        0x1C,                           /* Descriptor size */
-        0x24,                           /* Class specific interface desc type */
-        0x06,                           /* Extension Unit Descriptor type */
-        0x03,                           /* ID of this terminal */
-        0xFF,0xFF,0xFF,0xFF,            /* 16 byte GUID */
-        0xFF,0xFF,0xFF,0xFF,
-        0xFF,0xFF,0xFF,0xFF,
-        0xFF,0xFF,0xFF,0xFF,
-        0x00,                           /* Number of controls in this terminal */
-        0x01,                           /* Number of input pins in this terminal */
-        0x02,                           /* Source ID : 2 : Connected to Proc Unit */
-        0x03,                           /* Size of controls field for this terminal : 3 bytes */
-        0x00,0x00,0x00,                 /* No controls supported */
+        0x03,
+        0x01,0x00,0x00,
         0x00,                           /* String desc index : Not used */
-#endif
 
         /* Output Terminal Descriptor */
         0x09,                           /* Descriptor size */
@@ -709,15 +665,14 @@ const uint8_t CyFxUSBSSConfigDscr[] =
         CY_U3P_SS_EP_COMPN_DESCR,       /* SS Endpoint Companion Descriptor Type */
         0x00,                           /* Max no. of packets in a Burst : 1 */
         0x00,                           /* Attribute: N.A. */
-        0x00,                           /* Bytes per interval:1024 */
-        0x04,
+        0x40,
+        0x00,
 
         /* Class Specific Interrupt Endpoint Descriptor */
         0x05,                           /* Descriptor size */
         0x25,                           /* Class Specific Endpoint Descriptor Type */
         CY_U3P_USB_EP_INTR,             /* End point Sub Type */
         0x40,0x00,                      /* Max packet size = 64 bytes */
-
 
         /* Standard Video Streaming Interface Descriptor (Alternate Setting 0) */
         0x09,                           /* Descriptor size */
@@ -735,9 +690,9 @@ const uint8_t CyFxUSBSSConfigDscr[] =
         0x24,                           /* Class-specific VS I/f Type */
         0x01,                           /* Descriptotor Subtype : Input Header */
         0x01,                           /* 1 format desciptor follows */
-        0xB5,0x00,                      /* Total size of Class specific VS descr */
+        0xC3,0x00,
         CY_FX_EP_BULK_VIDEO,            /* EP address for BULK video data */
-        0x00,                           /* No dynamic format change supported , Hardware button on Camera?*/
+        0x00,
         0x04,                           /* Output terminal ID : 4 */
         0x01,                           /* Still image capture method 1 supported */
         0x00,                           /* Hardware trigger NOT supported */
@@ -750,7 +705,7 @@ const uint8_t CyFxUSBSSConfigDscr[] =
         0x24,                           /* Class-specific VS I/f Type */
         0x04,                           /* Subtype : uncompressed format I/F */
         0x01,                           /* Format desciptor index */
-        0x05,                           /* Number of frame descriptor followed Number of Frame mode */
+        0x05,
         0x59,0x55,0x59,0x32,            /* GUID used to identify streaming-encoding format: YUY2  */
         0x00,0x00,0x10,0x00,
         0x80,0x00,0x00,0xAA,
@@ -768,72 +723,71 @@ const uint8_t CyFxUSBSSConfigDscr[] =
         0x05,                           /* Subtype: uncompressed frame I/F */
         FRAME_MODE0,                  /* Frame Descriptor Index */
         0x00,                           /* Still image capture method 1 supported */
-        WBVAL(UVC_MODE0_WIDTH),                  /* Width in pixel: mode 0 */
-        WBVAL(UVC_MODE0_HEIGHT),                 /* Height in pixel mode 0*/
+        WBVAL(UVC_MODE0_WIDTH),
+        WBVAL(UVC_MODE0_HEIGHT),
         DBVAL(MIN_MODE0_BIT_RATE),           /* Min bit rate bits/s. */
         DBVAL(MAX_MODE0_BIT_RATE),           /* Max bit rate bits/s. */
         DBVAL(MAX_MODE0_FRAME_SIZE),         /* Maximum video or still frame size in bytes(Deprecated) */
         DBVAL(INTERVAL_MODE0),            /* Default Frame Interval */
-        0x01,                          /* Frame interval(Frame Rate) types: Only one frame interval supported for this resolution*/
-        DBVAL(INTERVAL_MODE0),           /* Frame Interval mode 0 */
+        0x01,
+        DBVAL(INTERVAL_MODE0),
 
         0x1E,                           /* Descriptor size */
         0x24,                           /* Descriptor type*/
         0x05,                           /* Subtype: uncompressed frame I/F */
         FRAME_MODE1,                  /* Frame Descriptor Index */
         0x00,                           /* Still image capture method 1 supported */
-        WBVAL(UVC_MODE1_WIDTH),                  /* Width in pixel: mode1 */
-        WBVAL(UVC_MODE1_HEIGHT),                 /* Height in pixel mode 1*/
+        WBVAL(UVC_MODE1_WIDTH),
+        WBVAL(UVC_MODE1_HEIGHT),
         DBVAL(MIN_MODE1_BIT_RATE),           /* Min bit rate bits/s. */
         DBVAL(MAX_MODE1_BIT_RATE),           /* Max bit rate bits/s. */
         DBVAL(MAX_MODE1_FRAME_SIZE),         /* Maximum video or still frame size in bytes(Deprecated) */
         DBVAL(INTERVAL_MODE1),            /* Default Frame Interval */
-        0x01,                          /* Frame interval(Frame Rate) types: Only one frame interval supported for this resolution*/
-        DBVAL(INTERVAL_MODE1),           /* Frame Interval mode 1 */
+        0x01,
+        DBVAL(INTERVAL_MODE1),
 
         0x1E,                           /* Descriptor size */
         0x24,                           /* Descriptor type*/
         0x05,                           /* Subtype: uncompressed frame I/F */
         FRAME_MODE2,                  /* Frame Descriptor Index */
         0x00,                           /* Still image capture method 1 supported */
-        WBVAL(UVC_MODE2_WIDTH),                  /* Width in pixel: mode 2 */
-        WBVAL(UVC_MODE2_HEIGHT),                 /* Height in pixel mode 2*/
+        WBVAL(UVC_MODE2_WIDTH),
+        WBVAL(UVC_MODE2_HEIGHT),
         DBVAL(MIN_MODE2_BIT_RATE),           /* Min bit rate bits/s. */
         DBVAL(MAX_MODE2_BIT_RATE),           /* Max bit rate bits/s. */
         DBVAL(MAX_MODE2_FRAME_SIZE),         /* Maximum video or still frame size in bytes(Deprecated) */
         DBVAL(INTERVAL_MODE2),            /* Default Frame Interval */
-        0x01,                          /* Frame interval(Frame Rate) types: Only one frame interval supported for this resolution*/
-        DBVAL(INTERVAL_MODE2),           /* Frame Interval mode 2 */
+        0x01,
+        DBVAL(INTERVAL_MODE2),
 
         0x1E,                           /* Descriptor size */
         0x24,                           /* Descriptor type*/
         0x05,                           /* Subtype: uncompressed frame I/F */
         FRAME_MODE3,                  /* Frame Descriptor Index */
         0x00,                           /* Still image capture method 1 supported */
-        WBVAL(UVC_MODE3_WIDTH),                  /* Width in pixel: mode 3*/
-        WBVAL(UVC_MODE3_HEIGHT),                 /* Height in pixel mode 3*/
+        WBVAL(UVC_MODE3_WIDTH),
+        WBVAL(UVC_MODE3_HEIGHT),
         DBVAL(MIN_MODE3_BIT_RATE),           /* Min bit rate bits/s. */
         DBVAL(MAX_MODE3_BIT_RATE),           /* Max bit rate bits/s. */
         DBVAL(MAX_MODE3_FRAME_SIZE),         /* Maximum video or still frame size in bytes(Deprecated) */
         DBVAL(INTERVAL_MODE3),            /* Default Frame Interval */
-        0x01,                          /* Frame interval(Frame Rate) types: Only one frame interval supported for this resolution*/
-        DBVAL(INTERVAL_MODE3),           /* Frame Interval mode 3 */
+        0x01,
+        DBVAL(INTERVAL_MODE3),
 
         0x22,                           /* Descriptor size */
         0x24,                           /* Descriptor type*/
         0x05,                           /* Subtype: uncompressed frame I/F */
         FRAME_MODE4,                  /* Frame Descriptor Index */
         0x00,                           /* Still image capture method 1 supported */
-        WBVAL(UVC_MODE4_WIDTH),                  /* Width in pixel: mode 4 */
-        WBVAL(UVC_MODE4_HEIGHT),                 /* Height in pixel mode 4*/
+        WBVAL(UVC_MODE4_WIDTH),
+        WBVAL(UVC_MODE4_HEIGHT),
         DBVAL(MIN_MODE4_BIT_RATE),           /* Min bit rate bits/s. */
         DBVAL(MAX_MODE4_BIT_RATE),           /* Max bit rate bits/s. */
         DBVAL(MAX_MODE4_FRAME_SIZE),         /* Maximum video or still frame size in bytes(Deprecated) */
         DBVAL(INTERVAL_MODE4),            /* Default Frame Interval */
-        0x02,                          /* Frame interval(Frame Rate) types: Only two frame interval supported for this resolution*/
-        DBVAL(INTERVAL_MODE4),           /* Frame Interval mode 4 */
-        DBVAL(INTERVAL_MODE4_MIN),           /* Frame Interval mode 4 */
-
+        0x02,
+        DBVAL(INTERVAL_MODE4),
+        DBVAL(INTERVAL_MODE4_MIN),
 
         /* Endpoint Descriptor for BULK Streaming Video Data */
         0x07,                           /* Descriptor size */
@@ -896,7 +850,6 @@ const uint8_t CyFxUSBSSConfigDscr[] =
 #endif
     };
 
-
 /* Standard Language ID String Descriptor */
 const uint8_t CyFxUSBStringLangIDDscr[] =
     {
@@ -905,27 +858,26 @@ const uint8_t CyFxUSBStringLangIDDscr[] =
         0x09,0x04                       /* Language ID supported */
     };
 
-/* Standard Manufacturer String Descriptor */
 const uint8_t CyFxUSBManufactureDscr[] =
     {
-        0x10,                           /* Descriptor Size */
+        0x1C,
         CY_U3P_USB_STRING_DESCR,        /* Device Descriptor Type */
-        'C',0x00,
-        'y',0x00,
-        'p',0x00,
-        'r',0x00,
-        'e',0x00,
-        's',0x00,
-        's',0x00
+        'C',0x00, 'i',0x00, 'r',0x00, 'c',0x00,
+        'u',0x00, 'i',0x00, 't',0x00, 'V',0x00,
+        'a',0x00, 'l',0x00, 'l',0x00, 'e',0x00,
+        'y',0x00
     };
 
-
-/* Standard Product String Descriptor */
 const uint8_t CyFxUSBProductDscr[] =
     {
-        0x08,                           /* Descriptor Size */
+        0x0A,
         CY_U3P_USB_STRING_DESCR,        /* Device Descriptor Type */
-        'F',0x00,
-        'X',0x00,
-        '3',0x00
+        'C',0x00, 'H',0x00, 'C',0x00, '5',0x00
+    };
+
+uint8_t CyFxUSBSerialDscr[2 + 15 * 2] =
+    {
+        0x04,
+        CY_U3P_USB_STRING_DESCR,
+        '0',0x00
     };

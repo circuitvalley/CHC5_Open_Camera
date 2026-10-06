@@ -369,6 +369,7 @@ static int marvell_config_intr(struct phy_device *phydev)
 
 static irqreturn_t marvell_handle_interrupt(struct phy_device *phydev)
 {
+	irqreturn_t ret = IRQ_NONE;
 	int irq_status;
 
 	irq_status = phy_read(phydev, MII_M1011_IEVENT);
@@ -377,12 +378,17 @@ static irqreturn_t marvell_handle_interrupt(struct phy_device *phydev)
 		return IRQ_NONE;
 	}
 
-	if (!(irq_status & MII_M1011_IMASK_INIT))
-		return IRQ_NONE;
+	if (irq_status & MII_M1011_IMASK_INIT) {
+		phy_trigger_machine(phydev);
+		ret = IRQ_HANDLED;
+	}
 
-	phy_trigger_machine(phydev);
+#if IS_ENABLED(CONFIG_MARVELL_PHY_PTP)
+	if (marvell_phy_ptp_irq(phydev) == IRQ_HANDLED)
+		ret = IRQ_HANDLED;
+#endif
 
-	return IRQ_HANDLED;
+	return ret;
 }
 
 static int marvell_set_polarity(struct phy_device *phydev, int polarity)
@@ -784,11 +790,14 @@ static void marvell_config_led(struct phy_device *phydev)
 		return;
 	}
 
+	if (of_property_read_bool(phydev->mdio.dev.of_node,
+				  "circuitvalley,led1-event-input")
 #if IS_ENABLED(CONFIG_MARVELL_PHY_PTP)
-	if (marvell_phy_ptp_event_active(phydev))
+	    || marvell_phy_ptp_event_active(phydev)
+#endif
+	   )
 		def_config = (def_config & ~0x00f0) |
 			     (MII_88E1318S_PHY_LED_FUNC_HI_Z << 4);
-#endif
 
 	err = phy_write_paged(phydev, MII_MARVELL_LED_PAGE, MII_PHY_LED_CTRL,
 			      def_config);
@@ -3269,6 +3278,10 @@ static const struct sfp_upstream_ops m88e1510_sfp_ops = {
 static int m88e1510_probe(struct phy_device *phydev)
 {
 	int err;
+
+	err = marvell_set_page(phydev, MII_MARVELL_COPPER_PAGE);
+	if (err < 0)
+		return err;
 
 	err = marvell_probe(phydev);
 	if (err)

@@ -339,7 +339,13 @@
 			phandle = <0x1e>;
 
 			ethernet-phy@0 {
+				compatible = "ethernet-phy-id0141.0dd1", "ethernet-phy-ieee802.3-c22";
 				reg = <0x00>;
+				interrupt-parent = <0x10>;
+				interrupts = <0x2f 0x08>;
+				circuitvalley,led1-event-input;
+				pinctrl-names = "default";
+				pinctrl-0 = <0x80>;
 				phandle = <0x05>;
 			};
 		};
@@ -364,6 +370,7 @@
 			interrupt-parent = <0x04>;
 			interrupts = <0x00 0x18 0x04>;
 			reg = <0xe0100000 0x1000>;
+			disable-wp;
 			phandle = <0x20>;
 		};
 
@@ -434,6 +441,21 @@
 					conf-tx {
 						pins = "MIO28\0MIO30\0MIO32\0MIO33\0MIO34\0MIO35\0MIO37\0MIO38\0MIO39";
 						bias-disable;
+					};
+				};
+
+				phy-intn-default {
+					phandle = <0x80>;
+
+					mux {
+						groups = "gpio0_47_grp";
+						function = "gpio0";
+					};
+
+					conf {
+						pins = "MIO47";
+						bias-pull-up;
+						io-standard = <0x01>;
 					};
 				};
 			};

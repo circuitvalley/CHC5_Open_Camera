@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-irq-affinity.service - interrupt placement at boot
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 interrupt placement (FX3 mailbox and GigE frame done on CPU1)
+Documentation=file:/usr/lib/chc5/chc5-irq-affinity.sh
+After=chc5-sensor-load.service systemd-udevd.service systemd-udev-trigger.service
+Before=camcfgd.service gvcp_server.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/chc5/chc5-irq-affinity.sh
+
+[Install]
+WantedBy=multi-user.target

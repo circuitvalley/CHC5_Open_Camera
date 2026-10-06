@@ -17,4 +17,6 @@ uint32_t genconv_pfnc_to_pixpack_mbus(uint32_t pfnc);
 
 int genconv_apply_register(uint32_t addr, const uint8_t *value, int len);
 
+void genconv_render_camio(struct camcfgd_camio_regs *out);
+
 #endif

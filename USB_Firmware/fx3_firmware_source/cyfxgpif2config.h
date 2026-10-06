@@ -1,4 +1,3 @@
-
 #ifndef _INCLUDED__
 #define _INCLUDED__
 #include "cyu3types.h"
@@ -33,13 +32,11 @@
 #define FRAME_END_SCK0 18
 #define FRAME_END_SCK1 19
 
-
 /* Summary
    Initial value of early outputs from the state machine.
  */
 #define ALPHA_START_SCK0 0x0
 #define ALPHA_START_SCK1 0x0
-
 
 /* Summary
    Transition function values used in the state machine.
@@ -49,10 +46,10 @@ uint16_t CyFxGpifTransition[]  = {
 };
 
 /* Summary
-   Table containing the transition information for various states. 
+   Table containing the transition information for various states.
    This table has to be stored in the WAVEFORM Registers.
-   This array consists of non-replicated waveform descriptors and acts as a 
-   waveform table. 
+   This array consists of non-replicated waveform descriptors and acts as a
+   waveform table.
  */
 CyU3PGpifWaveData CyFxGpifWavedata[]  = {
     {{0x1E738201,0x00000000,0x80000000},{0x00000000,0x00000000,0x00000000}},
@@ -93,16 +90,16 @@ uint32_t CyFxGpifRegValue[]  = {
     0x00000002,  /*  CY_U3P_PIB_GPIF_INTR_MASK */
     0x00000082,  /*  CY_U3P_PIB_GPIF_SERIAL_IN_CONFIG */
     0x00000782,  /*  CY_U3P_PIB_GPIF_SERIAL_OUT_CONFIG */
-    0x00010400,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_DIRECTION */
+    0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_DIRECTION */
     0x0000FFFA,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_DEFAULT */
-    0x00000100,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_POLARITY */
+    0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_POLARITY */
     0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_TOGGLE */
     0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_SELECT */
     0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_SELECT */
     0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_SELECT */
     0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_SELECT */
     0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_SELECT */
-    0x00000001,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_SELECT */
+    0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_SELECT */
     0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_SELECT */
     0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_SELECT */
     0x00000000,  /*  CY_U3P_PIB_GPIF_CTRL_BUS_SELECT */
@@ -163,7 +160,7 @@ uint32_t CyFxGpifRegValue[]  = {
 };
 
 /* Summary
-   This structure holds all the configuration inputs for the GPIF II. 
+   This structure holds all the configuration inputs for the GPIF II.
  */
 const CyU3PGpifConfig_t CyFxGpifConfig  = {
     (uint16_t)(sizeof(CyFxGpifWavedataPosition)/sizeof(uint8_t)),
@@ -175,4 +172,4 @@ const CyU3PGpifConfig_t CyFxGpifConfig  = {
     CyFxGpifRegValue
 };
 
-#endif   /* _INCLUDED__ */
+#endif

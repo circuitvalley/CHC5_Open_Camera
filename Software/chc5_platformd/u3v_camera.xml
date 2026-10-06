@@ -8,10 +8,10 @@
  SchemaMinorVersion="1"
  SchemaSubMinorVersion="0"
  MajorVersion="1"
- MinorVersion="4"
+ MinorVersion="7"
  SubMinorVersion="0"
  ProductGuid="12345678-ABCD-ABCD-ABCD-123456789ABC"
- VersionGuid="1920A4AB-AC6A-4CE3-947C-3E90A7071353"
+ VersionGuid="802ADCC0-2797-4B6F-B9F0-70103465FA4B"
  xmlns="http://www.genicam.org/GenApi/Version_1_1"
  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
  xsi:schemaLocation="http://www.genicam.org/GenApi/Version_1_1
@@ -83,6 +83,8 @@
   <ToolTip>Analog signal conditioning</ToolTip>
   <pFeature>Gain</pFeature>
   <pFeature>GainAuto</pFeature>
+  <pFeature>AutoGainLowerLimit</pFeature>
+  <pFeature>AutoGainUpperLimit</pFeature>
   <pFeature>BlackLevel</pFeature>
   <pFeature>GammaEnable</pFeature>
   <pFeature>GammaSelector</pFeature>
@@ -101,7 +103,6 @@
   <pFeature>PayloadSize</pFeature>
   <pFeature>TLParamsLocked</pFeature>
  </Category>
-
 
  <StringReg Name="DeviceVendorName">
   <ToolTip>Name of the device vendor</ToolTip>
@@ -142,7 +143,6 @@
   <AccessMode>RW</AccessMode>
   <pPort>Device</pPort>
  </StringReg>
-
 
  <Integer Name="Width">
   <ToolTip>Width of the image in pixels</ToolTip>
@@ -349,15 +349,6 @@
   <EnumEntry Name="Off">
    <Value>0</Value>
   </EnumEntry>
-  <EnumEntry Name="GreyHorizontalRamp">
-   <Value>1</Value>
-  </EnumEntry>
-  <EnumEntry Name="GreyVerticalRamp">
-   <Value>2</Value>
-  </EnumEntry>
-  <EnumEntry Name="ColorBar">
-   <Value>3</Value>
-  </EnumEntry>
   <pValue>TestPatternReg</pValue>
  </Enumeration>
 
@@ -369,7 +360,6 @@
   <Sign>Unsigned</Sign>
   <Endianness>LittleEndian</Endianness>
  </IntReg>
-
 
  <Enumeration Name="AcquisitionMode">
   <ToolTip>Sets the acquisition mode</ToolTip>
@@ -469,14 +459,21 @@
  <Float Name="AcquisitionFrameRate">
   <ToolTip>Acquisition frame rate in frames per second</ToolTip>
   <Description>Controls the acquisition rate (in frames per second) at which the frames are captured.</Description>
-  <pValue>AcquisitionFrameRateReg</pValue>
+  <pValue>AcquisitionFrameRateConv</pValue>
   <Min>1</Min>
   <Max>4000</Max>
   <Unit>Hz</Unit>
   <Representation>Linear</Representation>
   <DisplayNotation>Fixed</DisplayNotation>
-  <DisplayPrecision>1</DisplayPrecision>
+  <DisplayPrecision>3</DisplayPrecision>
  </Float>
+
+ <Converter Name="AcquisitionFrameRateConv">
+  <FormulaTo>TRUNC(FROM * 1000 + 0.5)</FormulaTo>
+  <FormulaFrom>TO / 1000</FormulaFrom>
+  <pValue>AcquisitionFrameRateReg</pValue>
+  <Slope>Increasing</Slope>
+ </Converter>
 
  <IntReg Name="AcquisitionFrameRateReg">
   <Address>0x05000038</Address>
@@ -501,7 +498,6 @@
   <Sign>Unsigned</Sign>
   <Endianness>LittleEndian</Endianness>
  </IntReg>
-
 
  <Float Name="Gain">
   <ToolTip>Analog gain in dB (0 dB = unity gain)</ToolTip>
@@ -644,6 +640,64 @@
   <Endianness>LittleEndian</Endianness>
  </IntReg>
 
+ <Float Name="AutoGainLowerLimit">
+  <ToolTip>Lower limit of the Gain in auto gain mode (dB)</ToolTip>
+  <Description>Minimum gain the auto-gain algorithm may use.</Description>
+  <Visibility>Expert</Visibility>
+  <pValue>AutoGainLowerConv</pValue>
+  <Min>0.0</Min>
+  <Max>72.0</Max>
+  <Unit>dB</Unit>
+  <Representation>Linear</Representation>
+  <DisplayNotation>Fixed</DisplayNotation>
+  <DisplayPrecision>1</DisplayPrecision>
+ </Float>
+
+ <Converter Name="AutoGainLowerConv">
+  <FormulaTo>FROM * 10</FormulaTo>
+  <FormulaFrom>(TO = 0) ? 0.0 : (TO / 10)</FormulaFrom>
+  <pValue>AutoGainLowerLimitReg</pValue>
+  <Slope>Increasing</Slope>
+ </Converter>
+
+ <IntReg Name="AutoGainLowerLimitReg">
+  <Address>0x050000C0</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
+ <Float Name="AutoGainUpperLimit">
+  <ToolTip>Upper limit of the Gain in auto gain mode (dB)</ToolTip>
+  <Description>Maximum gain the auto-gain algorithm may use.</Description>
+  <Visibility>Expert</Visibility>
+  <pValue>AutoGainUpperConv</pValue>
+  <Min>0.0</Min>
+  <Max>72.0</Max>
+  <Unit>dB</Unit>
+  <Representation>Linear</Representation>
+  <DisplayNotation>Fixed</DisplayNotation>
+  <DisplayPrecision>1</DisplayPrecision>
+ </Float>
+
+ <Converter Name="AutoGainUpperConv">
+  <FormulaTo>((FROM * 10) &lt; 1) ? 1 : (FROM * 10)</FormulaTo>
+  <FormulaFrom>(TO = 0) ? 72.0 : (TO / 10)</FormulaFrom>
+  <pValue>AutoGainUpperLimitReg</pValue>
+  <Slope>Increasing</Slope>
+ </Converter>
+
+ <IntReg Name="AutoGainUpperLimitReg">
+  <Address>0x050000C4</Address>
+  <Length>4</Length>
+  <AccessMode>RW</AccessMode>
+  <pPort>Device</pPort>
+  <Sign>Unsigned</Sign>
+  <Endianness>LittleEndian</Endianness>
+ </IntReg>
+
  <Enumeration Name="BalanceWhiteAuto">
   <ToolTip>Sets the automatic white balance control mode</ToolTip>
   <Description>Controls whether white balance is adjusted automatically by the device.</Description>
@@ -686,12 +740,13 @@
   <pValue>BalanceRatioReg</pValue>
  </Integer>
  <IntReg Name="BalanceRatioReg">
+  <pInvalidator>BalanceRatioSelectorReg</pInvalidator>
   <Address>0x05000084</Address><Length>4</Length><AccessMode>RW</AccessMode>
   <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
  </IntReg>
 
  <Integer Name="BalanceWhiteAutoLowerLimitRaw">
-  <ToolTip>AWB min per-channel gain, U8.8 (0 = device default)</ToolTip>
+  <ToolTip>AWB min per-channel gain, U8.8 (256 = 1.0; 0 = device default)</ToolTip>
   <Value>0</Value><Min>0</Min><Max>256</Max><Inc>1</Inc>
   <pValue>AwbLowerLimitReg</pValue>
  </Integer>
@@ -700,8 +755,8 @@
   <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
  </IntReg>
  <Integer Name="BalanceWhiteAutoUpperLimitRaw">
-  <ToolTip>AWB max per-channel gain, U8.8/16 (0 = device default)</ToolTip>
-  <Value>0</Value><Min>0</Min><Max>160</Max><Inc>1</Inc>
+  <ToolTip>AWB max per-channel gain, U8.8 (256 = 1.0; 0 = device default)</ToolTip>
+  <Value>0</Value><Min>0</Min><Max>4096</Max><Inc>1</Inc>
   <pValue>AwbUpperLimitReg</pValue>
  </Integer>
  <IntReg Name="AwbUpperLimitReg">
@@ -756,7 +811,6 @@
   <pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness>
  </IntReg>
 
-
  <Integer Name="TLParamsLocked" NameSpace="Standard">
   <ToolTip>Transport layer parameter lock. Set to 1 by the host before acquisition start to lock image format parameters. Set to 0 after acquisition stop.</ToolTip>
   <DisplayName>TL Params Locked</DisplayName>
@@ -794,7 +848,6 @@
   <Sign>Unsigned</Sign>
   <Endianness>LittleEndian</Endianness>
  </IntReg>
-
 
  <Enumeration Name="AEMeteringMode">
   <ToolTip>Auto-exposure metering mode</ToolTip>
@@ -947,12 +1000,12 @@
   <Unit>Hz</Unit>
   <Representation>Linear</Representation>
   <DisplayNotation>Fixed</DisplayNotation>
-  <DisplayPrecision>2</DisplayPrecision>
+  <DisplayPrecision>3</DisplayPrecision>
  </Float>
 
  <Converter Name="ResultingFrameRateConv">
-  <FormulaTo>FROM * 100</FormulaTo>
-  <FormulaFrom>TO / 100</FormulaFrom>
+  <FormulaTo>FROM * 1000</FormulaTo>
+  <FormulaFrom>TO / 1000</FormulaFrom>
   <pValue>ResultingFrameRateReg</pValue>
   <Slope>Increasing</Slope>
  </Converter>
@@ -1065,7 +1118,7 @@
   <pValue>DeviceLinkThroughputLimitReg</pValue>
   <Min>10000000</Min>
   <Max>350000000</Max>
-  <Inc>1</Inc>
+  <Inc>1000000</Inc>
   <Unit>Bps</Unit>
  </Integer>
 
@@ -1081,12 +1134,18 @@
  <Category Name="DigitalIOControl">
   <ToolTip>Auxiliary opto line I/O (chc5_camio_sync)</ToolTip>
   <pFeature>LineSelector</pFeature>
+  <pFeature>LineMode</pFeature>
   <pFeature>LineInverter</pFeature>
   <pFeature>LineStatus</pFeature>
+  <pFeature>LineStatusAll</pFeature>
   <pFeature>LineSource</pFeature>
+  <pFeature>LineDebouncerTime</pFeature>
   <pFeature>UserOutputValue</pFeature>
+  <pFeature>TriggerSelector</pFeature>
   <pFeature>TriggerMode</pFeature>
   <pFeature>TriggerSource</pFeature>
+  <pFeature>TriggerSoftware</pFeature>
+  <pFeature>ExposureMode</pFeature>
   <pFeature>TriggerActivation</pFeature>
   <pFeature>TriggerDivider</pFeature>
   <pFeature>TriggerDelay</pFeature>
@@ -1099,29 +1158,54 @@
  </Enumeration>
  <IntReg Name="LineSelectorReg"><Address>0x0500E000</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
- <Integer Name="LineInverter"><pValue>LineInverterReg</pValue><Min>0</Min><Max>1</Max></Integer>
+ <Boolean Name="LineInverter"><pValue>LineInverterReg</pValue></Boolean>
  <IntReg Name="LineInverterReg"><Address>0x0500E008</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
- <Integer Name="LineStatus"><pValue>LineStatusReg</pValue></Integer>
- <IntReg Name="LineStatusReg"><Address>0x0500E00C</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+ <Boolean Name="LineStatus"><pValue>LineStatusReg</pValue><AccessMode>RO</AccessMode></Boolean>
+ <IntReg Name="LineStatusReg"><Address>0x0500E00C</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Cachable>NoCache</Cachable><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Enumeration Name="LineMode"><ToolTip>Line0 is the opto input, Line1 the opto output (fixed).</ToolTip>
+  <EnumEntry Name="Input"><Value>0</Value></EnumEntry>
+  <EnumEntry Name="Output"><Value>1</Value></EnumEntry>
+  <pValue>LineSelectorReg</pValue>
+  <AccessMode>RO</AccessMode>
+ </Enumeration>
+
+ <Integer Name="LineStatusAll"><ToolTip>bit 0 Line0 (input), bit 1 Line1 (output)</ToolTip><pValue>LineStatusAllReg</pValue></Integer>
+ <IntReg Name="LineStatusAllReg"><Address>0x0500E010</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Cachable>NoCache</Cachable><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Float Name="LineDebouncerTime"><ToolTip>Line0 must hold a new level this long (us). 0 = off.</ToolTip><pIsAvailable>LineSelectorIsInput</pIsAvailable><pValue>LineDebouncerTimeUs</pValue><Min>0</Min><Max>16777</Max><Unit>us</Unit></Float>
+ <Converter Name="LineDebouncerTimeUs"><FormulaTo>ROUND(FROM)</FormulaTo><FormulaFrom>TO</FormulaFrom><pValue>LineDebouncerTimeReg</pValue><Slope>Increasing</Slope></Converter>
+ <IntReg Name="LineDebouncerTimeReg"><Address>0x0500E048</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
  <Enumeration Name="LineSource">
+  <pIsAvailable>LineSelectorIsOutput</pIsAvailable>
   <EnumEntry Name="Off"><Value>0</Value></EnumEntry>
   <EnumEntry Name="UserOutput0"><Value>1</Value></EnumEntry>
   <EnumEntry Name="Strobe"><Value>2</Value></EnumEntry>
-  <EnumEntry Name="ExposureActive"><Value>3</Value></EnumEntry>
-  <EnumEntry Name="Status"><Value>4</Value></EnumEntry>
-  <EnumEntry Name="SyncOut"><Value>5</Value></EnumEntry>
+  <EnumEntry Name="ExposureActive"><pIsAvailable>CHC5CapNativeStrobe</pIsAvailable><Value>3</Value></EnumEntry>
+  <EnumEntry Name="FrameTriggerWait"><ToolTip>High while the camera can take a frame trigger.</ToolTip><Value>4</Value></EnumEntry>
+  <EnumEntry Name="SyncOut"><pIsAvailable>CHC5CapSyncOut</pIsAvailable><Value>5</Value></EnumEntry>
   <EnumEntry Name="InputPassthrough"><Value>6</Value></EnumEntry>
-  <EnumEntry Name="PtpPulse"><ToolTip>1 ms pulse on every PTP second (FPGA time base locked to PTP). PTP bitstreams only.</ToolTip><Value>7</Value></EnumEntry>
+  <EnumEntry Name="PtpPulse"><pIsAvailable>CHC5CapPtpPulse</pIsAvailable><ToolTip>1 ms pulse on every PTP second (FPGA time base locked to PTP). PTP bitstreams only.</ToolTip><Value>7</Value></EnumEntry>
   <pValue>LineSourceReg</pValue>
  </Enumeration>
  <IntReg Name="LineSourceReg"><Address>0x0500E014</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
- <Integer Name="UserOutputValue"><pValue>UserOutputValueReg</pValue><Min>0</Min><Max>1</Max></Integer>
+ <Boolean Name="UserOutputValue"><pIsAvailable>LineSelectorIsOutput</pIsAvailable><pValue>UserOutputValueReg</pValue></Boolean>
+ <IntSwissKnife Name="LineSelectorIsOutput"><pVariable Name="S">LineSelectorReg</pVariable><Formula>S = 1</Formula></IntSwissKnife>
+ <IntSwissKnife Name="LineSelectorIsInput"><pVariable Name="S">LineSelectorReg</pVariable><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(S = 0) &amp;&amp; ((C &amp; 4) = 4)</Formula></IntSwissKnife>
  <IntReg Name="UserOutputValueReg"><Address>0x0500E018</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
+ <Enumeration Name="TriggerSelector"><ToolTip>One trigger: the frame start.</ToolTip>
+  <pIsAvailable>CHC5CapTrigger</pIsAvailable>
+  <EnumEntry Name="FrameStart"><Value>3</Value></EnumEntry>
+  <pValue>TriggerSelectorVal</pValue>
+ </Enumeration>
+ <Integer Name="TriggerSelectorVal"><Value>3</Value></Integer>
+ <Integer Name="CHC5IoCaps"><Visibility>Guru</Visibility><pValue>CHC5IoCapsReg</pValue></Integer>
  <Enumeration Name="TriggerMode">
+  <pIsAvailable>CHC5CapTrigger</pIsAvailable>
   <EnumEntry Name="Off"><Value>0</Value></EnumEntry>
   <EnumEntry Name="On"><Value>1</Value></EnumEntry>
   <pValue>TriggerModeReg</pValue>
@@ -1129,13 +1213,25 @@
  <IntReg Name="TriggerModeReg"><Address>0x0500E020</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
  <Enumeration Name="TriggerSource">
-  <EnumEntry Name="Software"><Value>0</Value></EnumEntry>
+  <pIsAvailable>CHC5CapTrigger</pIsAvailable>
+  <EnumEntry Name="Software"><pIsAvailable>CHC5CapSoftware</pIsAvailable><Value>0</Value></EnumEntry>
   <EnumEntry Name="Line0"><Value>1</Value></EnumEntry>
   <pValue>TriggerSourceReg</pValue>
  </Enumeration>
+ <Command Name="TriggerSoftware"><ToolTip>One trigger (TriggerMode On, TriggerSource Software).</ToolTip><pIsAvailable>CHC5CapSoftware</pIsAvailable><pValue>TriggerSoftwareReg</pValue><CommandValue>1</CommandValue></Command>
+ <IntReg Name="TriggerSoftwareReg"><Address>0x0500E038</Address><Length>4</Length><AccessMode>WO</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <Enumeration Name="ExposureMode"><ToolTip>Timed: ExposureTime.  TriggerWidth: the Line0 pulse is the exposure.</ToolTip>
+  <EnumEntry Name="Timed"><Value>1</Value></EnumEntry>
+  <EnumEntry Name="TriggerWidth"><pIsAvailable>CHC5CapSoftware</pIsAvailable><Value>2</Value></EnumEntry>
+  <pValue>ExposureModeReg</pValue>
+ </Enumeration>
+ <IntReg Name="ExposureModeReg"><Address>0x0500E03C</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
  <IntReg Name="TriggerSourceReg"><Address>0x0500E024</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
  <Enumeration Name="TriggerActivation">
+  <pIsAvailable>CHC5CapTrigger</pIsAvailable>
   <EnumEntry Name="RisingEdge"><Value>0</Value></EnumEntry>
   <EnumEntry Name="FallingEdge"><Value>1</Value></EnumEntry>
   <EnumEntry Name="AnyEdge"><Value>2</Value></EnumEntry>
@@ -1144,11 +1240,21 @@
  </Enumeration>
  <IntReg Name="TriggerActivationReg"><Address>0x0500E028</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
- <Integer Name="TriggerDivider"><pValue>TriggerDividerReg</pValue><Min>1</Min><Max>255</Max></Integer>
+ <Integer Name="TriggerDivider"><pIsAvailable>CHC5CapTrigger</pIsAvailable><pValue>TriggerDividerReg</pValue><Min>1</Min><Max>255</Max></Integer>
  <IntReg Name="TriggerDividerReg"><Address>0x0500E02C</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
- <Integer Name="TriggerDelay"><ToolTip>Trigger delay (microseconds)</ToolTip><pValue>TriggerDelayReg</pValue><Min>0</Min><Max>1000000</Max><Unit>us</Unit></Integer>
+ <Float Name="TriggerDelay"><ToolTip>Trigger delay (microseconds)</ToolTip><pIsAvailable>CHC5CapTrigger</pIsAvailable><pValue>TriggerDelayUs</pValue><Min>0</Min><Max>1000000</Max><Unit>us</Unit></Float>
+ <Converter Name="TriggerDelayUs"><FormulaTo>ROUND(FROM)</FormulaTo><FormulaFrom>TO</FormulaFrom><pValue>TriggerDelayReg</pValue><Slope>Increasing</Slope></Converter>
  <IntReg Name="TriggerDelayReg"><Address>0x0500E030</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+
+ <IntReg Name="CHC5IoCapsReg"><Address>0x0500E04C</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Cachable>NoCache</Cachable><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
+ <IntSwissKnife Name="CHC5CapTrigger"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 1) = 1</Formula></IntSwissKnife>
+ <IntSwissKnife Name="CHC5CapSoftware"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 2) = 2</Formula></IntSwissKnife>
+ <IntSwissKnife Name="CHC5CapDebounce"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 4) = 4</Formula></IntSwissKnife>
+ <IntSwissKnife Name="CHC5CapGenlock"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 16) = 16</Formula></IntSwissKnife>
+ <IntSwissKnife Name="CHC5CapNativeStrobe"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 32) = 32</Formula></IntSwissKnife>
+ <IntSwissKnife Name="CHC5CapSyncOut"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 64) = 64</Formula></IntSwissKnife>
+ <IntSwissKnife Name="CHC5CapPtpPulse"><pVariable Name="C">CHC5IoCapsReg</pVariable><Formula>(C &amp; 128) = 128</Formula></IntSwissKnife>
 
  <Category Name="CHC5AuxSyncControl">
   <ToolTip>CHC5 programmable strobe + multi-camera genlock</ToolTip>
@@ -1159,39 +1265,41 @@
   <pFeature>StrobeMinOn</pFeature>
   <pFeature>SyncRole</pFeature>
   <pFeature>SyncStatus</pFeature>
+  <pFeature>CHC5IoCaps</pFeature>
  </Category>
 
- <Integer Name="StrobeEnable"><pValue>StrobeEnableReg</pValue><Min>0</Min><Max>1</Max></Integer>
+ <Boolean Name="StrobeEnable"><pValue>StrobeEnableReg</pValue></Boolean>
  <IntReg Name="StrobeEnableReg"><Address>0x0500E040</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
  <Enumeration Name="StrobeSource">
   <EnumEntry Name="PLGenerated"><Value>0</Value></EnumEntry>
-  <EnumEntry Name="NativeStrobe"><Value>1</Value></EnumEntry>
+  <EnumEntry Name="NativeStrobe"><pIsAvailable>CHC5CapNativeStrobe</pIsAvailable><Value>1</Value></EnumEntry>
   <pValue>StrobeSourceReg</pValue>
  </Enumeration>
  <IntReg Name="StrobeSourceReg"><Address>0x0500E044</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
- <Integer Name="StrobeDelay"><ToolTip>us</ToolTip><pValue>StrobeDelayReg</pValue><Min>0</Min><Max>650000</Max><Unit>us</Unit></Integer>
+ <Float Name="StrobeDelay"><ToolTip>us</ToolTip><pValue>StrobeDelayUs</pValue><Min>0</Min><Max>650000</Max><Unit>us</Unit></Float>
+ <Converter Name="StrobeDelayUs"><FormulaTo>ROUND(FROM)</FormulaTo><FormulaFrom>TO</FormulaFrom><pValue>StrobeDelayReg</pValue><Slope>Increasing</Slope></Converter>
  <IntReg Name="StrobeDelayReg"><Address>0x0500E050</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
-
- <Integer Name="StrobeDuration"><ToolTip>us</ToolTip><pValue>StrobeDurationReg</pValue><Min>0</Min><Max>650000</Max><Unit>us</Unit></Integer>
+ <Float Name="StrobeDuration"><ToolTip>us</ToolTip><pValue>StrobeDurationUs</pValue><Min>0</Min><Max>650000</Max><Unit>us</Unit></Float>
+ <Converter Name="StrobeDurationUs"><FormulaTo>ROUND(FROM)</FormulaTo><FormulaFrom>TO</FormulaFrom><pValue>StrobeDurationReg</pValue><Slope>Increasing</Slope></Converter>
  <IntReg Name="StrobeDurationReg"><Address>0x0500E058</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
- <Integer Name="StrobeMinOn"><ToolTip>us</ToolTip><pValue>StrobeMinOnReg</pValue><Min>0</Min><Max>650000</Max><Unit>us</Unit></Integer>
+ <Float Name="StrobeMinOn"><ToolTip>us</ToolTip><pValue>StrobeMinOnUs</pValue><Min>0</Min><Max>650000</Max><Unit>us</Unit></Float>
+ <Converter Name="StrobeMinOnUs"><FormulaTo>ROUND(FROM)</FormulaTo><FormulaFrom>TO</FormulaFrom><pValue>StrobeMinOnReg</pValue><Slope>Increasing</Slope></Converter>
  <IntReg Name="StrobeMinOnReg"><Address>0x0500E05C</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
  <Enumeration Name="SyncRole">
   <EnumEntry Name="Off"><Value>0</Value></EnumEntry>
-  <EnumEntry Name="Master"><Value>1</Value></EnumEntry>
-  <EnumEntry Name="Slave"><Value>2</Value></EnumEntry>
+  <EnumEntry Name="Master"><pIsAvailable>CHC5CapSyncOut</pIsAvailable><Value>1</Value></EnumEntry>
+  <EnumEntry Name="Slave"><pIsAvailable>CHC5CapGenlock</pIsAvailable><Value>2</Value></EnumEntry>
   <pValue>SyncRoleReg</pValue>
  </Enumeration>
  <IntReg Name="SyncRoleReg"><Address>0x0500E070</Address><Length>4</Length><AccessMode>RW</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
- <Integer Name="SyncStatus"><pValue>SyncStatusReg</pValue></Integer>
- <IntReg Name="SyncStatusReg"><Address>0x0500E074</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
-
+ <Integer Name="SyncStatus"><ToolTip>bit 0 locked, 1 slave detected, 3:2 role (0 off, 1 master, 2 slave, 3 PTP follower).</ToolTip><pValue>SyncStatusReg</pValue></Integer>
+ <IntReg Name="SyncStatusReg"><Address>0x0500E074</Address><Length>4</Length><AccessMode>RO</AccessMode><pPort>Device</pPort><Cachable>NoCache</Cachable><Sign>Unsigned</Sign><Endianness>LittleEndian</Endianness></IntReg>
 
  <Port Name="Device">
   <ToolTip>Port node giving access to the device</ToolTip>

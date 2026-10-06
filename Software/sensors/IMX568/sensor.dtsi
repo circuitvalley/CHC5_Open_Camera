@@ -12,11 +12,15 @@
 imx568: sensor@1a {
 	compatible = "sony,imx568";
 	reg = <0x1a>;
+	CHC5_CAM_RESET_XCLR
 	clocks = <&clk_37m125>;
 	VANA-supply = <&imx568_vana>;
 	VDIG-supply = <&imx568_vdig>;
 	VDDL-supply = <&imx568_vddl>;
 	link-frequencies = <0x00 0x1a8dca60>;
+#ifdef CHC5_MONO_SENSOR
+	mono-mode;
+#endif
 
 	port {
 		direction = "input";

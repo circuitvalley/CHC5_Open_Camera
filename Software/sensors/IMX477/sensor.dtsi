@@ -12,6 +12,7 @@
 imx477: sensor@1a {
 	compatible = "sony,imx477";
 	reg = <0x1a>;
+	CHC5_CAM_RESET_XCLR
 	clocks = <&clk_24m>;
 	VANA-supply = <&imx477_vana>;
 	VDIG-supply = <&imx477_vdig>;

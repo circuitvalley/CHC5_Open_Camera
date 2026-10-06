@@ -15,16 +15,19 @@
 #include <string.h>
 #include <sys/stat.h>
 
-int camio_pub_poll(struct camio_cfg *out)
+int camio_pub_poll(struct camio_cfg *out, uint32_t *mask)
 {
-    static time_t s_mtime;
+    static struct timespec s_mtim;
+    static ino_t  s_ino;
     static off_t  s_size;
     static int    s_seen;
+    static struct camio_cfg s_last;
 
     struct stat st;
     if (stat(CAMIO_PUB_PATH, &st) != 0)
         return 0;
-    if (s_seen && st.st_mtime == s_mtime && st.st_size == s_size)
+    if (s_seen && st.st_ino == s_ino && st.st_size == s_size &&
+        st.st_mtim.tv_sec == s_mtim.tv_sec && st.st_mtim.tv_nsec == s_mtim.tv_nsec)
         return 0;
 
     FILE *f = fopen(CAMIO_PUB_PATH, "r");
@@ -48,10 +51,9 @@ int camio_pub_poll(struct camio_cfg *out)
         if      (!strcmp(k, "in_function"))        c.in_function        = (uint8_t)v;
         else if (!strcmp(k, "in_activation"))      c.in_activation      = (uint8_t)v;
         else if (!strcmp(k, "in_invert"))          c.in_invert          = (uint8_t)v;
-        else if (!strcmp(k, "trigger_delay_us"))   c.trigger_delay_us   = (uint32_t)v;
+        else if (!strcmp(k, "trigger_delay_us"))   c.trigger_delay_ns   = chc5camio_us_to_ns((uint32_t)v);
         else if (!strcmp(k, "trigger_divider"))    c.trigger_divider    = (uint16_t)v;
         else if (!strcmp(k, "strobe_enable"))      c.strobe_enable      = (uint8_t)v;
-        else if (!strcmp(k, "strobe_invert"))      c.strobe_invert      = (uint8_t)v;
         else if (!strcmp(k, "strobe_src"))         c.strobe_src         = (uint8_t)v;
         else if (!strcmp(k, "strobe_delay_us"))    c.strobe_delay_us    = (uint32_t)v;
         else if (!strcmp(k, "strobe_duration_us")) c.strobe_duration_us = (uint32_t)v;
@@ -60,14 +62,22 @@ int camio_pub_poll(struct camio_cfg *out)
         else if (!strcmp(k, "out_invert"))         c.out_invert         = (uint8_t)v;
         else if (!strcmp(k, "out_user_value"))     c.out_user_value     = (uint8_t)v;
         else if (!strcmp(k, "sync_role"))          c.sync_role          = (uint8_t)v;
-        else if (!strcmp(k, "sync_role_by"))       c.sync_role_by       = (uint8_t)v;
-        else if (!strcmp(k, "sync_trig_route"))    c.sync_trig_route    = (uint8_t)v;
+        else if (!strcmp(k, "trig_src"))           c.trig_src           = v == 1 ? CHC5CAMIO_TRIG_SRC_SOFTWARE
+                                                                                 : CHC5CAMIO_TRIG_SRC_LINE0;
+        else if (!strcmp(k, "width_mode"))         c.width_mode         = v ? 1 : 0;
+        else if (!strcmp(k, "in_filter_us"))       c.in_filter_ns       = v > 16777u ? 16777215u : (uint32_t)v * 1000u;
+        else if (!strcmp(k, "sync_enable"))        c.sched_enable       = v ? 1 : 0;
+        else if (!strcmp(k, "sync_rate_mhz"))      c.sched_period_ps    = chc5camio_mhz_to_ps((uint32_t)v);
     }
     fclose(f);
 
-    s_mtime = st.st_mtime;
+    *mask = s_seen ? camio_cfg_diff(&c, &s_last) : CAMIO_F_ALL;
+    *mask &= ~(CAMIO_F(SYNC_ROLE_BY) | CAMIO_F(SYNC_TRIG_ROUTE));
+    s_mtim  = st.st_mtim;
+    s_ino   = st.st_ino;
     s_size  = st.st_size;
     s_seen  = 1;
+    s_last  = c;
     *out = c;
-    return 1;
+    return *mask != 0;
 }

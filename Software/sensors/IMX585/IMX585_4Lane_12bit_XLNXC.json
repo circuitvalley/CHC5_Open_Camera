@@ -2,13 +2,13 @@
   "manifest_kind": "sensor_v1",
   "manifest_version": 1,
   "manifest": {
-    "version": "1.13.0",
-    "description": "IMX678, 4 lanes, 12-bit, Xilinx colour pipeline (ST30)",
+    "version": "2.11.5",
+    "description": "IMX585 4-lane 12-bit, Xilinx colour pipeline (no AE/AWB, no 3x3 CCM)",
     "vendor": "Sony",
-    "model": "IMX678"
+    "model": "IMX585"
   },
   "kernel": {
-    "module": "imx678",
+    "module": "imx585",
     "lanes": 4
   },
   "sensor": {
@@ -20,14 +20,14 @@
     "height_inc": 4,
     "offset_x_inc": 2,
     "offset_y_inc": 4,
-    "width_min": 528,
-    "height_min": 480,
     "color_filter": "BayerRG",
     "bit_depth": 12,
-    "chroma": "color"
+    "chroma": "color",
+    "width_min": 64,
+    "height_min": 240
   },
   "exposure": {
-    "min_us": 18,
+    "min_us": 30,
     "max_us": 1000000
   },
   "gain": {
@@ -46,8 +46,12 @@
     "max_mhz": 4000000
   },
   "binning": {
+    "width": 1920,
+    "height": 1080,
     "max_h": 2,
-    "max_v": 2
+    "max_v": 2,
+    "width_min": 64,
+    "height_min": 120
   },
   "decimation": {
     "max_h": 1,
@@ -100,31 +104,31 @@
   ],
   "uvc_modes": [
     {
-      "w": 640,
-      "h": 480,
-      "fps": 54,
-      "src": "bin",
-      "binning": 17
-    },
-    {
-      "w": 1280,
-      "h": 720,
-      "fps": 37,
-      "src": "bin",
-      "binning": 17
-    },
-    {
       "w": 1920,
       "h": 1080,
-      "fps": 25,
+      "fps": 30,
       "src": "bin",
       "binning": 17
     },
     {
       "w": 3840,
       "h": 2160,
-      "fps": 21,
+      "fps": 18,
       "src": "full"
+    },
+    {
+      "w": 1280,
+      "h": 720,
+      "fps": 40,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 640,
+      "h": 480,
+      "fps": 60,
+      "src": "bin",
+      "binning": 17
     }
   ],
   "gamma": {
@@ -147,50 +151,37 @@
       "name": "AllAAAh"
     },
     {
-      "name": "Toggle555hAAAh"
-    },
-    {
-      "name": "ToggleAAAh555h"
-    },
-    {
-      "name": "Toggle000h555h"
-    },
-    {
-      "name": "Toggle555h000h"
-    },
-    {
-      "name": "Toggle000hFFFh"
-    },
-    {
-      "name": "ToggleFFFh000h"
-    },
-    {
       "name": "HorizontalColorBars"
+    },
+    {
+      "name": "VerticalColorBars"
     }
   ],
-  "ccm": "9755 -3340 -2319 0 -2556 10883 -4231 0 517 -5185 8764 0",
+  "ccm": "4885 -345 -444 0 -1508 6191 -587 0 -131 -1544 5771 0",
   "color_temp": {
     "k3200": {
-      "r_x100": 128,
-      "b_x100": 235
+      "r_x100": 116,
+      "b_x100": 266
     },
     "k4800": {
-      "r_x100": 164,
-      "b_x100": 185
+      "r_x100": 148,
+      "b_x100": 204
     },
     "k5600": {
-      "r_x100": 180,
-      "b_x100": 171
+      "r_x100": 162,
+      "b_x100": 187
     },
     "k6500": {
-      "r_x100": 194,
-      "b_x100": 159
+      "r_x100": 174,
+      "b_x100": 172
     }
   },
   "ccm_ct": {
-    "k3200": "10068 -1912 -4060 0 -4255 13170 -4819 0 536 -8434 11994 0",
-    "k4800": "10148 -3093 -2959 0 -3061 11815 -4658 0 694 -6173 9575 0",
-    "k5600": "9755 -3340 -2319 0 -2556 10883 -4231 0 517 -5185 8764 0",
-    "k6500": "9429 -3545 -1788 0 -2137 10109 -3876 0 370 -4363 8089 0"
-  }
+    "k3200": "4414 363 -681 0 -2215 6670 -359 0 -173 -2092 6361 0",
+    "k4800": "4750 -152 -502 0 -1690 6318 -532 0 -130 -1670 5896 0",
+    "k5600": "4885 -345 -444 0 -1508 6191 -587 0 -131 -1544 5771 0",
+    "k6500": "4996 -504 -396 0 -1356 6085 -633 0 -133 -1439 5668 0"
+  },
+  "bayer_order": "RGGB",
+  "bayer_flip_moves": "none"
 }

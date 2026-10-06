@@ -66,13 +66,11 @@
 #define IMX283_REG_HTRIMMING_START	0x3058
 #define IMX283_REG_HTRIMMING_END	0x305a
 
-#define IMX283_INTERNAL_CLOCK		72000000U
+#define IMX283_PLL_PER_TIMING_CLOCK	20U
 #define IMX283_REG_HMAX			0x3036
 #define IMX283_HMAX_MAX			0xffff
 
 #define IMX283_PIXELS_PER_CLOCK		8U
-#define IMX283_PIXEL_RATE		(IMX283_INTERNAL_CLOCK * \
-					 IMX283_PIXELS_PER_CLOCK)
 #define IMX283_REG_VMAX			0x3038
 #define IMX283_VMAX_MAX			0xfffff
 #define IMX283_REG_SHR			0x303b
@@ -316,19 +314,25 @@ static const struct imx283_base_config base_configs[] = {
 enum {
 	IMX283_LINK_FREQ_1440MBPS,
 	IMX283_LINK_FREQ_720MBPS,
+	IMX283_LINK_FREQ_1008MBPS,
+	IMX283_LINK_FREQ_960MBPS,
 };
 
 static const s64 link_freqs[] = {
 	[IMX283_LINK_FREQ_1440MBPS] = 720000000,
 	[IMX283_LINK_FREQ_720MBPS] = 360000000,
+	[IMX283_LINK_FREQ_1008MBPS] = 504000000,
+	[IMX283_LINK_FREQ_960MBPS] = 480000000,
 };
 
-#define IMX283_PLATFORM_MAX_LINK_FREQ	450000000LL
+#define IMX283_PLATFORM_MAX_LINK_FREQ	552000000LL
 
-static const struct {
+struct imx283_reg {
 	u16 addr;
 	u8 val;
-} imx283_regs_720mbps[] = {
+};
+
+static const struct imx283_reg imx283_regs_720mbps[] = {
 	{ 0x36c5, 0x01 },
 	{ 0x3ac4, 0x01 },
 	{ 0x320b, 0x00 },
@@ -344,6 +348,74 @@ static const struct {
 	{ 0x3028, 0x47 },
 	{ 0x302a, 0x0f },
 	{ 0x3104, 0x02 },
+};
+
+static const struct imx283_reg imx283_regs_1008mbps[] = {
+	{ 0x36c5, 0x00 },
+	{ 0x3ac4, 0x00 },
+	{ 0x320b, 0x00 },
+	{ 0x3018, 0x8f },
+	{ 0x301a, 0x4f },
+	{ 0x301c, 0x7f },
+	{ 0x301e, 0x47 },
+	{ 0x3020, 0x47 },
+	{ 0x3022, 0x4f },
+	{ 0x3024, 0x27 },
+	{ 0x3025, 0x01 },
+	{ 0x3026, 0x3f },
+	{ 0x3028, 0x47 },
+	{ 0x302a, 0x0f },
+	{ 0x3104, 0x02 },
+};
+
+static const struct imx283_reg imx283_regs_960mbps[] = {
+	{ 0x36c5, 0x00 },
+	{ 0x3ac4, 0x00 },
+	{ 0x320b, 0x00 },
+	{ 0x3018, 0x87 },
+	{ 0x301a, 0x4f },
+	{ 0x301c, 0x77 },
+	{ 0x301e, 0x47 },
+	{ 0x3020, 0x47 },
+	{ 0x3022, 0x4f },
+	{ 0x3024, 0x17 },
+	{ 0x3025, 0x01 },
+	{ 0x3026, 0x3f },
+	{ 0x3028, 0x47 },
+	{ 0x302a, 0x0f },
+	{ 0x3104, 0x02 },
+};
+
+struct imx283_link_cfg {
+	unsigned int pll_mbps;
+	unsigned int hmax_mult;
+	const struct imx283_reg *regs;
+	unsigned int num_regs;
+};
+
+static const struct imx283_link_cfg imx283_link_cfgs[] = {
+	[IMX283_LINK_FREQ_1440MBPS] = {
+		.pll_mbps = 1440,
+		.hmax_mult = 1,
+	},
+	[IMX283_LINK_FREQ_720MBPS] = {
+		.pll_mbps = 1440,
+		.hmax_mult = 2,
+		.regs = imx283_regs_720mbps,
+		.num_regs = ARRAY_SIZE(imx283_regs_720mbps),
+	},
+	[IMX283_LINK_FREQ_1008MBPS] = {
+		.pll_mbps = 1008,
+		.hmax_mult = 1,
+		.regs = imx283_regs_1008mbps,
+		.num_regs = ARRAY_SIZE(imx283_regs_1008mbps),
+	},
+	[IMX283_LINK_FREQ_960MBPS] = {
+		.pll_mbps = 960,
+		.hmax_mult = 1,
+		.regs = imx283_regs_960mbps,
+		.num_regs = ARRAY_SIZE(imx283_regs_960mbps),
+	},
 };
 
 struct imx283_inck_cfg {
@@ -413,6 +485,9 @@ struct imx283 {
 	struct regulator_bulk_data supplies[IMX283_NUM_SUPPLIES];
 
 	unsigned int link_freq_idx;
+	const struct imx283_link_cfg *link;
+	u16 plrd2;
+	u32 timing_hz;
 
 	struct v4l2_ctrl_handler ctrl_handler;
 	struct v4l2_ctrl *pixel_rate;
@@ -521,7 +596,7 @@ static bool imx283_code_is_10bit(u32 code)
 
 static unsigned int imx283_wire_height(const struct imx283 *imx283)
 {
-	return imx283->out_height + imx283->base_cfg->ob_size_v;
+	return imx283->out_height;
 }
 
 static unsigned int imx283_wire_width(const struct imx283 *imx283)
@@ -532,8 +607,12 @@ static unsigned int imx283_wire_width(const struct imx283 *imx283)
 static unsigned int imx283_cfg_hmax_min(const struct imx283 *imx283,
 					const struct imx283_base_config *cfg)
 {
-	return cfg->hmax_min *
-	       (imx283->link_freq_idx == IMX283_LINK_FREQ_720MBPS ? 2 : 1);
+	return cfg->hmax_min * imx283->link->hmax_mult;
+}
+
+static u64 imx283_pixel_rate(const struct imx283 *imx283)
+{
+	return (u64)imx283->timing_hz * IMX283_PIXELS_PER_CLOCK;
 }
 
 static u32 imx283_get_format_code(struct imx283 *imx283, u32 code)
@@ -549,7 +628,7 @@ static u32 imx283_get_format_code(struct imx283 *imx283, u32 code)
 	if (i >= ARRAY_SIZE(codes))
 		i = 0;
 
-	i = (i & ~1) | (imx283->vflip->val ? 1 : 0);
+	i &= ~1;
 
 	return codes[i];
 }
@@ -657,8 +736,12 @@ static void imx283_vcrop_regs(struct imx283 *imx283, u32 *vwinpos,
 	start = cfg->v_offset + top;
 
 	if (imx283->vflip->val) {
+		unsigned int rec_h = IMX283_PIXEL_ARRAY_HEIGHT >>
+				     (cfg->binning ? 1 : 0);
+		unsigned int top_arr = rec_h > imx283->out_height + top ?
+				       rec_h - imx283->out_height - top : 0;
 		unsigned int far = cfg->veff - cfg->v_offset_rev -
-				   imx283->out_height - top;
+				   imx283->out_height - top_arr;
 
 		pos = (cfg->vst - far / 2) & 0xfff;
 	} else {
@@ -776,8 +859,7 @@ static int imx283_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 	try_fmt_img->width = IMX283_PIXEL_ARRAY_WIDTH +
 			     base_configs[IMX283_BASE_MODE_FULL_12].ob_size_h;
-	try_fmt_img->height = IMX283_PIXEL_ARRAY_HEIGHT +
-			      base_configs[IMX283_BASE_MODE_FULL_12].ob_size_v;
+	try_fmt_img->height = IMX283_PIXEL_ARRAY_HEIGHT;
 	try_fmt_img->code = imx283_get_format_code(imx283,
 						   MEDIA_BUS_FMT_SRGGB12_1X12);
 	try_fmt_img->field = V4L2_FIELD_NONE;
@@ -957,6 +1039,9 @@ static int imx283_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 	case CHC5SENSOR_CID_OB_ON_IMAGE_DT:
 		ctrl->val = 1;
 		return 0;
+	case CHC5SENSOR_CID_OB_ON_IMAGE_MASK:
+		ctrl->val = CHC5SENSOR_OB_MASK_LEFT;
+		return 0;
 	case CHC5SENSOR_CID_OB_LEFT:
 		ctrl->val = (s32)cfg->ob_size_h;
 		return 0;
@@ -997,6 +1082,8 @@ static const struct v4l2_ctrl_config imx283_ob_ctrls[] = {
 	IMX283_OB_CTRL(CHC5SENSOR_CID_OB_RIGHT,  "Optical Black Right"),
 	IMX283_OB_CTRL(CHC5SENSOR_CID_OB_BOTTOM, "Optical Black Bottom"),
 	IMX283_OB_CTRL(CHC5SENSOR_CID_OB_ON_IMAGE_DT, "Optical Black On Image DT"),
+	IMX283_OB_CTRL(CHC5SENSOR_CID_OB_ON_IMAGE_MASK,
+		       "Optical Black On Image Mask"),
 };
 
 static int imx283_enum_mbus_code(struct v4l2_subdev *sd,
@@ -1052,10 +1139,8 @@ static int imx283_enum_frame_size(struct v4l2_subdev *sd,
 		fse->max_width = IMX283_PIXEL_ARRAY_WIDTH +
 			base_configs[IMX283_BASE_MODE_FULL_12].ob_size_h;
 		fse->min_height =
-			base_configs[IMX283_BASE_MODE_2X2_BIN].min_height +
-			base_configs[IMX283_BASE_MODE_2X2_BIN].ob_size_v;
-		fse->max_height = IMX283_PIXEL_ARRAY_HEIGHT +
-			base_configs[IMX283_BASE_MODE_FULL_12].ob_size_v;
+			base_configs[IMX283_BASE_MODE_2X2_BIN].min_height;
+		fse->max_height = IMX283_PIXEL_ARRAY_HEIGHT;
 	} else {
 		if (fse->code != MEDIA_BUS_FMT_SENSOR_DATA || fse->index > 0)
 			return -EINVAL;
@@ -1153,7 +1238,7 @@ static void imx283_set_framing_limits(struct imx283 *imx283)
 	if (frm_length_min < wire_h)
 		frm_length_min = wire_h;
 
-	frm_length_default = div_u64((u64)IMX283_INTERNAL_CLOCK,
+	frm_length_default = div_u64((u64)imx283->timing_hz,
 				     imx283->hmax * 30);
 	if (frm_length_default < frm_length_min)
 		frm_length_default = frm_length_min;
@@ -1178,7 +1263,7 @@ static int imx283_set_pad_format(struct v4l2_subdev *sd,
 	struct v4l2_mbus_framefmt *framefmt;
 	const struct imx283_base_config *cfg;
 	struct imx283 *imx283 = to_imx283(sd);
-	unsigned int req_width, req_height, probe_w, probe_h, bin_ob, bin_ob_h;
+	unsigned int req_width, req_height, probe_w, probe_h, bin_ob_h;
 
 	if (fmt->pad >= NUM_PADS)
 		return -EINVAL;
@@ -1192,8 +1277,7 @@ static int imx283_set_pad_format(struct v4l2_subdev *sd,
 		req_width = fmt->format.width;
 		req_height = fmt->format.height;
 
-		bin_ob = base_configs[IMX283_BASE_MODE_2X2_BIN].ob_size_v;
-		probe_h = req_height > bin_ob ? req_height - bin_ob : req_height;
+		probe_h = req_height;
 
 		bin_ob_h = base_configs[IMX283_BASE_MODE_2X2_BIN].ob_size_h;
 		probe_w = req_width > bin_ob_h ? req_width - bin_ob_h : req_width;
@@ -1208,13 +1292,11 @@ static int imx283_set_pad_format(struct v4l2_subdev *sd,
 
 		if (req_width > cfg->ob_size_h)
 			req_width -= cfg->ob_size_h;
-		if (req_height > cfg->ob_size_v)
-			req_height -= cfg->ob_size_v;
 
 		imx283_clamp_align(&req_width, &req_height, cfg);
 
 		fmt->format.width = req_width + cfg->ob_size_h;
-		fmt->format.height = req_height + cfg->ob_size_v;
+		fmt->format.height = req_height;
 		fmt->format.field = V4L2_FIELD_NONE;
 		imx283_reset_colorspace(&fmt->format);
 
@@ -1306,7 +1388,6 @@ static int imx283_get_selection(struct v4l2_subdev *sd,
 		if (r) {
 			sel->r = *r;
 			sel->r.width  += imx283->base_cfg->ob_size_h;
-			sel->r.height += imx283->base_cfg->ob_size_v;
 		}
 		mutex_unlock(&imx283->mutex);
 		return r ? 0 : -EINVAL;
@@ -1332,8 +1413,7 @@ static int imx283_get_selection(struct v4l2_subdev *sd,
 		sel->r.top = 0;
 		sel->r.width = IMX283_PIXEL_ARRAY_WIDTH +
 			base_configs[IMX283_BASE_MODE_FULL_12].ob_size_h;
-		sel->r.height = IMX283_PIXEL_ARRAY_HEIGHT +
-			base_configs[IMX283_BASE_MODE_FULL_12].ob_size_v;
+		sel->r.height = IMX283_PIXEL_ARRAY_HEIGHT;
 		return 0;
 	}
 
@@ -1396,23 +1476,19 @@ static int imx283_set_selection(struct v4l2_subdev *sd,
 	} else {
 		unsigned int compose_w = sel->r.width;
 		unsigned int compose_h = sel->r.height;
-		unsigned int probe_w, probe_h, ob_w, ob_h;
+		unsigned int probe_w, probe_h, ob_w;
 
 		ob_w = base_configs[IMX283_BASE_MODE_2X2_BIN].ob_size_h;
-		ob_h = base_configs[IMX283_BASE_MODE_2X2_BIN].ob_size_v;
 		probe_w = compose_w > ob_w ? compose_w - ob_w : compose_w;
-		probe_h = compose_h > ob_h ? compose_h - ob_h : compose_h;
+		probe_h = compose_h;
 
 		cfg = imx283_config_from_ratio(&imx283->crop_req,
 					       probe_w, probe_h,
 					       imx283->fmt_code);
 
 		ob_w = cfg->ob_size_h;
-		ob_h = cfg->ob_size_v;
 		if (compose_w > ob_w)
 			compose_w -= ob_w;
-		if (compose_h > ob_h)
-			compose_h -= ob_h;
 
 		imx283_clamp_align(&compose_w, &compose_h, cfg);
 
@@ -1448,7 +1524,7 @@ static int imx283_set_selection(struct v4l2_subdev *sd,
 		sel->r.left = 0;
 		sel->r.top = 0;
 		sel->r.width = compose_w + ob_w;
-		sel->r.height = compose_h + ob_h;
+		sel->r.height = compose_h;
 	}
 
 	mutex_unlock(&imx283->mutex);
@@ -1469,7 +1545,7 @@ static int imx283_standby_cancel(struct imx283 *imx283)
 				       inck->plrd1);
 	if (!ret)
 		ret = imx283_write_reg(imx283, IMX283_REG_PLRD2, 2,
-				       inck->plrd2);
+				       imx283->plrd2);
 	if (!ret)
 		ret = imx283_write_reg(imx283, IMX283_REG_PLRD3, 1,
 				       inck->plrd3);
@@ -1486,11 +1562,9 @@ static int imx283_standby_cancel(struct imx283 *imx283)
 		ret = imx283_write_reg(imx283, IMX283_REG_STBPL, 1,
 				       IMX283_STBPL_NORMAL);
 
-	if (imx283->link_freq_idx == IMX283_LINK_FREQ_720MBPS)
-		for (i = 0; i < ARRAY_SIZE(imx283_regs_720mbps) && !ret; i++)
-			ret = imx283_write_reg(imx283,
-					       imx283_regs_720mbps[i].addr, 1,
-					       imx283_regs_720mbps[i].val);
+	for (i = 0; i < imx283->link->num_regs && !ret; i++)
+		ret = imx283_write_reg(imx283, imx283->link->regs[i].addr, 1,
+				       imx283->link->regs[i].val);
 	if (ret)
 		return ret;
 
@@ -1503,14 +1577,7 @@ static int imx283_standby_cancel(struct imx283 *imx283)
 
 	usleep_range(19000, 20000);
 
-	ret = imx283_write_reg(imx283, IMX283_REG_CLAMP, 1, IMX283_CLPSQRST);
-	if (!ret)
-		ret = imx283_write_reg(imx283, IMX283_REG_XMSTA, 1, 0x00);
-	if (!ret)
-		ret = imx283_write_reg(imx283, IMX283_REG_SYNCDRV, 1,
-				       IMX283_SYNCDRV_XHS_XVS);
-
-	return ret;
+	return imx283_write_reg(imx283, IMX283_REG_CLAMP, 1, IMX283_CLPSQRST);
 }
 
 static int imx283_start_streaming(struct imx283 *imx283)
@@ -1554,7 +1621,15 @@ static int imx283_start_streaming(struct imx283 *imx283)
 		return ret;
 	}
 
-	return __v4l2_ctrl_handler_setup(imx283->sd.ctrl_handler);
+	ret = __v4l2_ctrl_handler_setup(imx283->sd.ctrl_handler);
+	if (ret)
+		return ret;
+
+	ret = imx283_write_reg(imx283, IMX283_REG_XMSTA, 1, 0x00);
+	if (!ret)
+		ret = imx283_write_reg(imx283, IMX283_REG_SYNCDRV, 1,
+				       IMX283_SYNCDRV_XHS_XVS);
+	return ret;
 }
 
 static void imx283_stop_streaming(struct imx283 *imx283)
@@ -1628,6 +1703,9 @@ static int imx283_power_on(struct device *dev)
 			__func__);
 		return ret;
 	}
+
+	gpiod_set_value_cansleep(imx283->reset_gpio, 0);
+	usleep_range(10, 20);
 
 	ret = clk_prepare_enable(imx283->xclk);
 	if (ret) {
@@ -1781,9 +1859,9 @@ static int imx283_init_controls(struct imx283 *imx283)
 
 	imx283->pixel_rate = v4l2_ctrl_new_std(ctrl_hdlr, &imx283_ctrl_ops,
 					       V4L2_CID_PIXEL_RATE,
-					       IMX283_PIXEL_RATE,
-					       IMX283_PIXEL_RATE, 1,
-					       IMX283_PIXEL_RATE);
+					       imx283_pixel_rate(imx283),
+					       imx283_pixel_rate(imx283), 1,
+					       imx283_pixel_rate(imx283));
 	if (imx283->pixel_rate)
 		imx283->pixel_rate->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
@@ -1912,8 +1990,8 @@ static int imx283_check_hwcfg(struct device *dev, struct imx283 *imx283)
 
 	if (link_freqs[i] > IMX283_PLATFORM_MAX_LINK_FREQ)
 		dev_warn(dev,
-			 "link-frequency %lld Hz not supported\n",
-			 link_freqs[i]);
+			 "link-frequency %lld Hz is above the supported maximum of %lld Hz\n",
+			 link_freqs[i], IMX283_PLATFORM_MAX_LINK_FREQ);
 
 	ret = 0;
 
@@ -1976,6 +2054,16 @@ static int imx283_probe(struct i2c_client *client)
 		return -EINVAL;
 	}
 
+	imx283->link = &imx283_link_cfgs[imx283->link_freq_idx];
+	if ((imx283->inck->plrd2 * imx283->link->pll_mbps) % 1440) {
+		dev_err(dev, "a %u Mbps link PLL is not reachable from %d Hz\n",
+			imx283->link->pll_mbps, imx283->xclk_freq);
+		return -EINVAL;
+	}
+	imx283->plrd2 = imx283->inck->plrd2 * imx283->link->pll_mbps / 1440;
+	imx283->timing_hz = imx283->link->pll_mbps *
+			    (1000000 / IMX283_PLL_PER_TIMING_CLOCK);
+
 	ret = imx283_get_regulators(imx283);
 	if (ret) {
 		dev_err(dev, "failed to get regulators\n");
@@ -1983,7 +2071,7 @@ static int imx283_probe(struct i2c_client *client)
 	}
 
 	imx283->reset_gpio = devm_gpiod_get_optional(dev, "reset",
-						     GPIOD_OUT_HIGH);
+						     GPIOD_OUT_LOW);
 	if (IS_ERR(imx283->reset_gpio))
 		return dev_err_probe(dev, PTR_ERR(imx283->reset_gpio),
 				     "failed to get reset GPIO\n");

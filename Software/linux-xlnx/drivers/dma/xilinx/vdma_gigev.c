@@ -34,6 +34,8 @@
 #include <linux/page_ref.h>
 #include <linux/sched/rt.h>
 #include <linux/macb_zynq_ptp.h>
+#include <linux/ethtool.h>
+#include <linux/rtnetlink.h>
 #include <uapi/linux/sched/types.h>
 #include <net/sock.h>
 #include <net/ip.h>
@@ -63,6 +65,7 @@ struct gvsp_buf {
 	enum buf_state  state;
 	u64             seq;
 	u64             ts_ns;
+	u64             done_ns;
 };
 
 #define N_TX_SKB  2048
@@ -127,6 +130,7 @@ struct gvsp_dev {
 	size_t      ring_size;
 
 	void __iomem   *vdma_regs;
+	void __iomem   *eof_regs;
 	int             vdma_irq;
 
 	struct gvsp_stream_cfg  cfg;
@@ -156,6 +160,10 @@ struct gvsp_dev {
 	spinlock_t         ts_lock;
 
 	u16  block_id;
+
+	u32  pace_pkt_delay_ns;
+	u32  pace_frame_delay_ns;
+	u32  link_mbps;
 
 	#define FRAME_LOG_SIZE 256
 	struct {
@@ -376,6 +384,14 @@ static struct sk_buff *gvsp_txring_get(struct gvsp_dev *gd)
 #define VDMA_FRMPTR_S2MM_SHIFT   16
 #define VDMA_FRMPTR_S2MM_MASK    GENMASK(20, 16)
 
+#define EOF_VERSION              0x00
+#define EOF_CTRL                 0x04
+#define EOF_LINES                0x08
+#define EOF_STATUS               0x10
+#define EOF_CTRL_EN              BIT(0)
+#define EOF_CTRL_ARM             BIT(1)
+#define EOF_MAGIC                0x454Fu
+
 static inline u32 vdma_rd(struct gvsp_dev *gd, u32 reg)
 {
 	return ioread32(gd->vdma_regs + reg);
@@ -390,13 +406,14 @@ static irqreturn_t gvsp_vdma_irq(int irq, void *arg)
 {
 	struct gvsp_dev *gd = arg;
 	u32 status;
-	int cur_wr, just_done;
+	int just_done;
 	unsigned long flags;
-	u64 now_ns;
+	u64 now_ns, done_ns;
 
 	status = vdma_rd(gd, VDMA_S2MM_DMASR);
 	if (!(status & VDMA_DMASR_ALL_IRQ))
 		return IRQ_NONE;
+	done_ns = ktime_get_ns();
 
 	if (gd->cfg.ts_clock == GVSP_TS_CLOCK_PHC) {
 		if (!gd->ndev || macb_zynq_ptp_now_ns(gd->ndev, &now_ns)) {
@@ -407,7 +424,7 @@ static irqreturn_t gvsp_vdma_irq(int irq, void *arg)
 	} else {
 		u64 zero;
 
-		now_ns = ktime_get_ns();
+		now_ns = done_ns;
 		spin_lock(&gd->ts_lock);
 		zero = gd->ts_zero_ns;
 		spin_unlock(&gd->ts_lock);
@@ -440,10 +457,11 @@ static irqreturn_t gvsp_vdma_irq(int irq, void *arg)
 		return IRQ_HANDLED;
 	}
 
-	gd->bufs[just_done].state = BUF_READY;
-	gd->bufs[just_done].seq   = ++gd->vdma_seq;
-	gd->bufs[just_done].ts_ns = now_ns;
-	gd->ready_idx             = just_done;
+	gd->bufs[just_done].state   = BUF_READY;
+	gd->bufs[just_done].seq     = ++gd->vdma_seq;
+	gd->bufs[just_done].ts_ns   = now_ns;
+	gd->bufs[just_done].done_ns = done_ns;
+	gd->ready_idx               = just_done;
 
 	spin_unlock_irqrestore(&gd->buf_lock, flags);
 
@@ -476,6 +494,33 @@ static int gvsp_vdma_reset(struct gvsp_dev *gd)
 
 	dev_err(&gd->pdev->dev, "VDMA S2MM reset timeout\n");
 	return -ETIMEDOUT;
+}
+
+static void gvsp_start_eof_fsync(struct gvsp_dev *gd)
+{
+	struct device_node *np;
+	u32 ver;
+
+	np = of_parse_phandle(gd->pdev->dev.of_node, "circuitvalley,eof-fsync", 0);
+	if (!np)
+		return;
+	gd->eof_regs = of_iomap(np, 0);
+	of_node_put(np);
+	if (!gd->eof_regs) {
+		dev_err(&gd->pdev->dev, "cannot iomap the eof-fsync block\n");
+		return;
+	}
+	ver = readl(gd->eof_regs + EOF_VERSION);
+	if ((ver >> 16) != EOF_MAGIC) {
+		dev_err(&gd->pdev->dev,
+		        "eof-fsync VERSION 0x%08x: not the block, frames will not complete (DT and bitstream disagree)\n",
+		        ver);
+		iounmap(gd->eof_regs);
+		gd->eof_regs = NULL;
+		return;
+	}
+	writel(gd->cfg.height, gd->eof_regs + EOF_LINES);
+	writel(EOF_CTRL_EN | EOF_CTRL_ARM, gd->eof_regs + EOF_CTRL);
 }
 
 static int gvsp_start_vdma(struct gvsp_dev *gd)
@@ -572,11 +617,19 @@ static int gvsp_start_vdma(struct gvsp_dev *gd)
 
 	gd->vdma_cur_wr = 0;
 
+	gvsp_start_eof_fsync(gd);
+
 	return 0;
 }
 
 static void gvsp_stop_vdma(struct gvsp_dev *gd)
 {
+	if (gd->eof_regs) {
+		writel(0, gd->eof_regs + EOF_CTRL);
+		iounmap(gd->eof_regs);
+		gd->eof_regs = NULL;
+	}
+
 	if (gd->vdma_regs) {
 		int timeout = 10000;
 
@@ -956,6 +1009,27 @@ static int gvsp_send_payload(struct gvsp_dev *gd,
 	}
 }
 
+#define GVSP_PACE_SLACK_NS	30000
+#define GVSP_PACE_MAX_NS	NSEC_PER_SEC
+
+static void gvsp_pace_until(u64 t)
+{
+	s64 d = (s64)(t - ktime_get_ns());
+
+	if (d <= GVSP_PACE_SLACK_NS)
+		return;
+	if (d > 20 * NSEC_PER_MSEC)
+		msleep(div_u64(d, NSEC_PER_MSEC));
+	else
+		usleep_range(div_u64(d - GVSP_PACE_SLACK_NS, NSEC_PER_USEC),
+			     div_u64(d, NSEC_PER_USEC));
+}
+
+static u32 gvsp_wire_ns(const struct gvsp_dev *gd, size_t chunk)
+{
+	return div_u64(((u64)chunk + 74) * 8000, gd->link_mbps);
+}
+
 static int gvsp_tx_thread(void *data)
 {
 	struct gvsp_dev *gd = data;
@@ -977,6 +1051,8 @@ static int gvsp_tx_thread(void *data)
 		int           new_ready = -1, i;
 		u64           best_seq  = U64_MAX;
 		int           wr_idx;
+
+		reinit_completion(&gd->frame_ready);
 
 		spin_lock_irqsave(&gd->buf_lock, flags);
 
@@ -1026,6 +1102,17 @@ static int gvsp_tx_thread(void *data)
 			u64  local_pkts  = 0;
 			u64  local_bytes = 0;
 			u32  batch_cnt   = 0;
+			u32  pkt_delay   = READ_ONCE(gd->pace_pkt_delay_ns);
+			u32  frame_delay = READ_ONCE(gd->pace_frame_delay_ns);
+			u64  pace_t;
+
+			if (frame_delay) {
+				gvsp_pace_until(gd->bufs[cur].done_ns + frame_delay +
+						GVSP_PACE_SLACK_NS);
+				if (kthread_should_stop())
+					goto frame_aborted;
+			}
+			pace_t = ktime_get_ns();
 
 			ret = gvsp_send_leader(gd, bid, ts);
 			if (ret) { aborted = true; goto frame_done; }
@@ -1038,8 +1125,13 @@ static int gvsp_tx_thread(void *data)
 				bool more;
 				int xmit_ret;
 
+				if (pkt_delay) {
+					pace_t += gvsp_wire_ns(gd, chunk) + pkt_delay;
+					gvsp_pace_until(pace_t);
+				}
+
 				batch_cnt++;
-				more = !is_last_payload &&
+				more = !is_last_payload && !pkt_delay &&
 				       (batch_cnt % XMIT_BATCH_SIZE != 0);
 
 				xmit_ret = gvsp_send_payload(gd, buf, offset,
@@ -1092,10 +1184,6 @@ frame_done:
 				    "frame %u aborted, continuing\n", bid);
 			}
 		}
-
-		reinit_completion(&gd->frame_ready);
-		if (wait_for_completion_interruptible(&gd->frame_ready) < 0)
-			break;
 	}
 
 	if (have_buf) {
@@ -1244,6 +1332,17 @@ static int gvsp_stream_start(struct gvsp_dev *gd,
 		}
 	}
 
+	{
+		struct ethtool_link_ksettings ks;
+
+		gd->link_mbps = 1000;
+		rtnl_lock();
+		if (!__ethtool_get_link_ksettings(gd->ndev, &ks) &&
+		    ks.base.speed != SPEED_UNKNOWN && ks.base.speed)
+			gd->link_mbps = ks.base.speed;
+		rtnl_unlock();
+	}
+
 	ret = gvsp_alloc_tx_ring(gd);
 	if (ret) goto err_net;
 
@@ -1349,6 +1448,18 @@ static long gvsp_ioctl(struct file *filp, unsigned int cmd,
 		spin_lock_irqsave(&gd->ts_lock, tflags);
 		gd->ts_zero_ns = zero;
 		spin_unlock_irqrestore(&gd->ts_lock, tflags);
+		break;
+	}
+	case GVSP_IOC_SET_PACING: {
+		struct gvsp_pacing p;
+
+		if (copy_from_user(&p, (void __user *)arg, sizeof(p)))
+			return -EFAULT;
+		if (p.packet_delay_ns > GVSP_PACE_MAX_NS ||
+		    p.frame_delay_ns > GVSP_PACE_MAX_NS)
+			return -EINVAL;
+		WRITE_ONCE(gd->pace_pkt_delay_ns, p.packet_delay_ns);
+		WRITE_ONCE(gd->pace_frame_delay_ns, p.frame_delay_ns);
 		break;
 	}
 	case GVSP_IOC_RESET:

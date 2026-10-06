@@ -117,8 +117,14 @@ struct marvell_ts {
 	const struct marvell_ts_ops *ops;
 	struct device *dev;
 
-	/* We only support one outstanding transmit skb */
+	spinlock_t tx_lock;
 	struct sk_buff *tx_skb;
+	unsigned long tx_timeout;
+	u16 tx_seq;
+	bool dep_pending;
+	u16 dep_seq;
+	u64 dep_ns;
+	unsigned long dep_expires;
 	enum hwtstamp_tx_types tx_type;
 
 	struct marvell_rxq rxq[2];
@@ -126,8 +132,6 @@ struct marvell_ts {
 
 	const struct marvell_ts_caps *caps;
 	u8 port;
-
-	bool irq_handler_called;
 };
 
 bool marvell_ts_rxtstamp(struct marvell_ts *ts, struct sk_buff *skb, int type);

@@ -8,7 +8,7 @@
 [Unit]
 Description=CHC5 first-boot per-unit provisioning (identity + per-unit admin password)
 DefaultDependencies=no
-After=chc5-rwlayers.service systemd-machine-id-commit.service
+After=chc5-rwlayers.service systemd-machine-id-commit.service boot.mount
 Requires=chc5-rwlayers.service
 Before=chc5_webd.service chc5_platformd.service
 ConditionPathExists=!/var/lib/chc5-rw/.provisioned

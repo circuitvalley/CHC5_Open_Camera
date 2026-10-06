@@ -36,17 +36,21 @@
 #include <cyu3externcstart.h>
 
 /* Definitions to enable/disable special features in this UVC application. */
-//#define UVC_PTZ_SUPPORT            /* Enable if Pan, Tilt and Zoom controls are to be implemented. */
-//#define BACKFLOW_DETECT            /* Enable if buffer overflow conditions are to be detected. */
-//#define DEBUG_PRINT_FRAME_COUNT    /* Enable UART debug prints to print the frame count every end of frame */
 /* #define USB_DEBUG_INTERFACE */       /* Enable custom USB interface for sensor interface debugging. */
 /* #define FX3_UVC_1_0_SUPPORT */       /* Enable to run as UVC 1.0 device. Default is UVC 1.1 device */
-/* #define UVC_EXTENSION_UNIT */        /* Enable to add a sample UVC extension unit that communicates with
-                                         * the host application associated with this firmware */
-#define FRAME_TIMER_ENABLE              /* Enable/Disable a timer that aborts an ongoing frame and restarts streaming
-                                         * when the transfer is stalled. Default setting is to enable frame timer */
 
-#define UVC_DEBUG_LEVEL                 (4)
+#define UVC_DEBUG_LEVEL                 (1)
+
+#define CY_FX_UVC_FRAME_TIMEOUT_MS      (3000)
+#define CY_FX_UVC_TIMER_RESTART_LIMIT   (3)
+#define CY_FX_UVC_STOP_RETRY_MS         (50)
+#define CY_FX_UVC_LOOP_POLL_MS          (10)
+#define CY_FX_UVC_STOP_ACK_TIMEOUT_MS   (700)
+#define CY_FX_UVC_STOP_ACK_POLL_MS      (10)
+#define CY_FX_UVC_STOP_ACK_RESEND_MS    (200)
+#define CY_FX_UVC_START_ACK_TIMEOUT_MS  (3000)
+#define CY_FX_UVC_START_ACK_POLL_MS     (50)
+#define CY_FX_UVC_START_ACK_RESEND_MS   (1000)
 
 /* UVC application thread parameters. */
 #define UVC_APP_THREAD_STACK           (0x1000) /* Stack size for the video streaming thread is 4 KB. */
@@ -82,10 +86,10 @@
 #define CY_FX_EP_BULK_VIDEO_PKT_SIZE    (0x400)         /* 1024 Bytes */
 
 /* UVC Video Streaming Endpoint Packet Count */
-#define CY_FX_EP_BULK_VIDEO_PKTS_COUNT  (0x20)          /* 32 packets (burst of 32) per DMA buffer. */
+#define CY_FX_EP_BULK_VIDEO_PKTS_COUNT  (0x20)
 
 /* DMA buffer size used for video streaming. */
-#define CY_FX_UVC_STREAM_BUF_SIZE       (CY_FX_EP_BULK_VIDEO_PKTS_COUNT * CY_FX_EP_BULK_VIDEO_PKT_SIZE)   //Totoal RAM availabe for dma buffer on CYUSB3014 224KB
+#define CY_FX_UVC_STREAM_BUF_SIZE       (CY_FX_EP_BULK_VIDEO_PKTS_COUNT * CY_FX_EP_BULK_VIDEO_PKT_SIZE)
 
 /* Maximum video data that can be accommodated in one DMA buffer. */
 #define CY_FX_UVC_BUF_FULL_SIZE         (CY_FX_UVC_STREAM_BUF_SIZE - 16)
@@ -151,6 +155,8 @@
 
 #define CY_FX_UVC_SENSOR_WRITE_EVENT            (1 << 7)
 
+#define CY_FX_UVC_FRAME_DONE_EVENT              (1 << 8)
+
 #define SENSOR_CMD_QUEUE_SIZE    16
 
 #define SENSOR_CMD_STREAM_CFG     0x01000000
@@ -160,6 +166,16 @@
 #define SENSOR_CMD_EXPOSURE       0x05000000
 #define SENSOR_CMD_TEST_PATTERN   0x06000000
 #define SENSOR_CMD_AUTO           0x07000000
+#define SENSOR_CMD_ABORT          0x08000000
+#define SENSOR_CMD_GAMMA          0x09000000
+
+#define UVC_GAMMA_MIN             (25u)
+#define UVC_GAMMA_MAX             (400u)
+#define UVC_GAMMA_DEF             (100u)
+
+#define UVC_EXPOSURE_UNIT_US      (100u)
+#define UVC_EXPOSURE_MAX_UNITS    (2500u)
+#define UVC_EXPOSURE_DEF_UNITS    (333u)
 
 #define SENSOR_CMD_ID(x)          ((x) & 0xFF000000)
 #define SENSOR_CMD_VAL16(x)       ((uint16_t)((x) & 0xFFFF))
@@ -181,7 +197,7 @@
 #define CY_FX_USB_SET_INTERFACE_REQ     (uint8_t)(0x0B)         /* USB SET_INTERFACE Request code. */
 
 #define CY_FX_UVC_MAX_HEADER           (12)             /* Maximum UVC header size, in bytes. */
-#define CY_FX_UVC_HEADER_DEFAULT_BFH   (0x8C)           /* Default BFH (Bit Field Header) for the UVC Header */
+#define CY_FX_UVC_HEADER_DEFAULT_BFH   (0x80)
 
 #ifdef FX3_UVC_1_0_SUPPORT
 #define CY_FX_UVC_MAX_PROBE_SETTING    (26)             /* Maximum number of bytes in Probe Control */
@@ -256,13 +272,8 @@
 #define CY_FX_UVC_CT_ROLL_RELATIVE_CONTROL                  (uint16_t)(0x1000)
 #define CY_FX_UVC_CT_PRIVACY_CONTROL                        (uint16_t)(0x1100)
 
-#define LOOP_TIMEOUT                                        (1000)      /* Period of frame count updates. */
-
-#ifdef UVC_EXTENSION_UNIT
-/* Extension Unit Terminal Controls specific UVC control selector codes */
-#define CY_FX_UVC_XU_GET_FIRMWARE_VERSION_CONTROL           (uint16_t)(0x0100)
-/* Customer specific controls can be added here */
-#endif
+#define CY_FX_UVC_XU_GUID_STR  "0d1d1b4c-5f3b-45c5-93eb-5fedb4a8caaf"
+#define CY_FX_UVC_XU_TEST_PATTERN_CONTROL                   (uint16_t)(0x0100)
 
 /* Undefined Terminal Controls specific UVC control selector codes defined in the USB Video Class specification */
 #define CY_FX_UVC_VC_REQUEST_ERROR_CODE_CONTROL             (uint16_t)(0x0200)
@@ -286,15 +297,6 @@ typedef enum CyFxUvcDmaResetVal
     CY_FX_UVC_DMA_RESET_COMMIT_BUFFER_FAILURE,          /* FX3 DMA reset event caused due to a commit buffer failure */
     CY_FX_UVC_DMA_RESET_FRAME_TIMER_OVERFLOW            /* FX3 DMA reset event caused due to frame timer overflow */
 } CyFxUvcDmaResetVal_t;
-
-/* Enum for different frame timer values */
-typedef enum CyFxUvcFrameTimerVal
-{
-    CY_FX_UVC_FRAME_TIMER_VAL_100MS = 100,
-    CY_FX_UVC_FRAME_TIMER_VAL_200MS = 200,
-    CY_FX_UVC_FRAME_TIMER_VAL_300MS = 300,
-    CY_FX_UVC_FRAME_TIMER_VAL_400MS = 400,
-} CyFxUvcFrameTimerVal_t;
 
 /* Extern definitions of the USB Enumeration constant arrays used for the UVC application.
    These arrays are defined in the cyfxuvcdscr.c file.

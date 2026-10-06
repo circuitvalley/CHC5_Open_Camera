@@ -28,6 +28,9 @@
 
 #define IMX568_REG_STANDBY		0x3000
 #define IMX568_REG_XMSTA		0x3010
+#define IMX568_REG_TRIGMODE		0x3400
+#define IMX568_TRIGMODE_FAST		0x02
+#define IMX568_TRIG_EXP_OFFSET_NS	2530
 
 #define IMX568_REG_INCKSEL_ST0		0x3014
 #define IMX568_REG_INCKSEL_ST1		0x3015
@@ -75,6 +78,10 @@
 #define IMX568_EXPOSURE_DEFAULT		1000
 
 #define IMX568_REG_SYNCSEL		0x343c
+#define IMX568_REG_TOUT0SEL		0x3436
+#define IMX568_TOUT0SEL_EXPOSURE		0x01
+#define IMX568_SYNCSEL_DRIVEN		0xc0
+#define IMX568_SYNCSEL_HIZ		0xf0
 
 #define IMX568_REG_GAIN			0x3514
 #define IMX568_GAIN_DB10_PER_CODE	1
@@ -159,13 +166,46 @@ v4l2_subdev_state_get_compose(struct v4l2_subdev_state *state, unsigned int pad)
 #define IMX568_CROP_LEFT_STEP		8U
 #define IMX568_CROP_TOP_STEP		8U
 
+#define IMX568_ROI_SPAN_WIDTH		(IMX568_PIXEL_ARRAY_WIDTH / IMX568_WIDTH_STEP * \
+					 IMX568_WIDTH_STEP)
+
+static_assert(IMX568_ROI_SPAN_WIDTH % IMX568_CROP_LEFT_STEP == 0,
+	      "a mirrored ROIPH1 must stay on the 8-column grid");
+
 #define IMX568_BINNING_WIDTH		1236U
 #define IMX568_BINNING_HEIGHT		1032U
-#define IMX568_SUB_TRIM_TOP		1U
-#define IMX568_SUB_TRIM_BOTTOM		1U
+#define IMX568_SUB_TRIM_LEFT		2U
+#define IMX568_SUB_TRIM_RIGHT		2U
+#define IMX568_SUB_TRIM_TOP		3U
+#define IMX568_SUB_TRIM_BOTTOM		5U
+#define IMX568_SUB_IMAGE_WIDTH		(IMX568_BINNING_WIDTH - IMX568_SUB_TRIM_LEFT - \
+					 IMX568_SUB_TRIM_RIGHT)
+#define IMX568_SUB_IMAGE_HEIGHT		(IMX568_BINNING_HEIGHT - IMX568_SUB_TRIM_TOP - \
+					 IMX568_SUB_TRIM_BOTTOM)
+
+static_assert(IMX568_SUB_TRIM_TOP % 2 == 1,
+	      "an even top trim leaves the Gb-first wire phase");
+static_assert(IMX568_SUB_TRIM_LEFT % 2 == 0,
+	      "an odd left trim moves the column phase");
+static_assert(IMX568_SUB_IMAGE_WIDTH % IMX568_WIDTH_STEP == 0 &&
+	      IMX568_SUB_IMAGE_HEIGHT % IMX568_HEIGHT_STEP == 0,
+	      "the binned image must sit on the ROI grid");
+
+#define IMX568_MONO_TRIM_TOP		4U
+#define IMX568_MONO_TRIM_BOTTOM		4U
+
+static_assert(IMX568_MONO_TRIM_TOP + IMX568_MONO_TRIM_BOTTOM ==
+	      IMX568_SUB_TRIM_TOP + IMX568_SUB_TRIM_BOTTOM,
+	      "mono and colour 2x2 must deliver the same image size");
+
+#define IMX568_REG_COLOUR_3797		0x3797
+#define IMX568_COLOUR_3797_VAL		0x20
+#define IMX568_REG_CHROMACITY		0x3817
+#define IMX568_CHROMACITY_MONO		BIT(7)
 
 #define IMX568_VBLANK_OVERHEAD		86
 #define IMX568_VBLANK_OVERHEAD_BIN	50
+#define IMX568_VBLANK_OVERHEAD_MONO_BIN	56
 
 #define IMX568_EBD_LINES		4
 #define IMX568_VOB_LINES		64
@@ -246,9 +286,37 @@ static const u8 gsdly_bin_table[2][2][IMX568_NUM_LINK_FREQS] = {
 	{ { 0x12, 0x12, 0x0e }, { 0x10, 0x0c, 0x08 } },
 };
 
+static const u16 hmax_min_mono_bin_table[2][2][IMX568_NUM_LINK_FREQS] = {
+	{
+		{ 271, 356, 527 },
+		{ 503, 664, 988 },
+	},
+	{
+		{ 232, 305, 450 },
+		{ 425, 560, 833 },
+	},
+};
+
+static const u8 gmrwt_mono_bin_table[2][2][IMX568_NUM_LINK_FREQS] = {
+	{ { 0x08, 0x04, 0x04 }, { 0x04, 0x04, 0x04 } },
+	{ { 0x0c, 0x08, 0x08 }, { 0x08, 0x04, 0x04 } },
+};
+
+static const u8 gmtwt_mono_bin_table[2][2][IMX568_NUM_LINK_FREQS] = {
+	{ { 0x38, 0x28, 0x1c }, { 0x20, 0x18, 0x10 } },
+	{ { 0x40, 0x30, 0x20 }, { 0x24, 0x1c, 0x14 } },
+};
+
+static const u8 gsdly_mono_bin_table[2][2][IMX568_NUM_LINK_FREQS] = {
+	{ { 0x18, 0x14, 0x0c }, { 0x10, 0x0c, 0x08 } },
+	{ { 0x1c, 0x14, 0x10 }, { 0x10, 0x0c, 0x08 } },
+};
+
 #define IMX568_GAINDLY_VAL		0x02
+#define IMX568_GAINDLY_VAL_MONO_BIN	0x04
 #define IMX568_REG_HVMODE_ALLPIX	0x00
 #define IMX568_REG_HVMODE_BINNING	0x08
+#define IMX568_REG_HVMODE_MONO_BIN	0x10
 
 #define IMX568_REG_LLBLANK		0x323c
 #define IMX568_REG_VINT_EN		0x323e
@@ -323,7 +391,6 @@ static const struct imx568_reg mode_common_regs[] = {
 	{0x367e, 0x24},
 	{0x3692, 0x10},
 	{0x36f5, 0x0f},
-	{0x3797, 0x20},
 	{0x3e2e, 0x07},
 	{0x3e30, 0x4e},
 	{0x3e6e, 0x07},
@@ -513,6 +580,11 @@ static const u32 codes[] = {
 	MEDIA_BUS_FMT_SBGGR10_1X10,
 };
 
+static const u32 mono_codes[] = {
+	MEDIA_BUS_FMT_Y12_1X12,
+	MEDIA_BUS_FMT_Y10_1X10,
+};
+
 static const char * const imx568_supply_name[] = {
 	"VANA",
 	"VDIG",
@@ -521,6 +593,7 @@ static const char * const imx568_supply_name[] = {
 
 #define IMX568_NUM_SUPPLIES ARRAY_SIZE(imx568_supply_name)
 
+#define IMX568_XCLR_ASSERT_US		10
 #define IMX568_XCLR_MIN_DELAY_US	10000
 #define IMX568_XCLR_DELAY_RANGE_US	1000
 
@@ -564,6 +637,10 @@ struct imx568 {
 	bool streaming;
 	bool hblank_live_logged;
 	bool binning;
+	bool mono;
+	u8 trig_mode;
+	bool follower;
+	s8 latched_follower;
 };
 
 static inline struct imx568 *to_imx568(struct v4l2_subdev *_sd)
@@ -655,6 +732,7 @@ static bool imx568_code_is_10bit(u32 code)
 	case MEDIA_BUS_FMT_SGRBG10_1X10:
 	case MEDIA_BUS_FMT_SGBRG10_1X10:
 	case MEDIA_BUS_FMT_SBGGR10_1X10:
+	case MEDIA_BUS_FMT_Y10_1X10:
 		return true;
 	default:
 		return false;
@@ -666,6 +744,10 @@ static u32 imx568_get_format_code(struct imx568 *imx568, u32 code)
 	unsigned int i;
 
 	lockdep_assert_held(&imx568->mutex);
+
+	if (imx568->mono)
+		return imx568_code_is_10bit(code) ? MEDIA_BUS_FMT_Y10_1X10 :
+						    MEDIA_BUS_FMT_Y12_1X12;
 
 	for (i = 0; i < ARRAY_SIZE(codes); i++)
 		if (codes[i] == code)
@@ -696,8 +778,10 @@ static u16 imx568_hmax_min_lookup(struct imx568 *imx568)
 	unsigned int l = imx568_lane_idx(imx568);
 	unsigned int r = imx568->link_freq_idx;
 
-	return imx568->binning ? hmax_min_bin_table[d][l][r]
-			       : hmax_min_table[d][l][r];
+	if (!imx568->binning)
+		return hmax_min_table[d][l][r];
+	return imx568->mono ? hmax_min_mono_bin_table[d][l][r]
+			    : hmax_min_bin_table[d][l][r];
 }
 
 static u8 imx568_gmrwt(struct imx568 *imx568)
@@ -706,7 +790,10 @@ static u8 imx568_gmrwt(struct imx568 *imx568)
 	unsigned int l = imx568_lane_idx(imx568);
 	unsigned int r = imx568->link_freq_idx;
 
-	return imx568->binning ? gmrwt_bin_table[d][l][r] : gmrwt_table[d][l][r];
+	if (!imx568->binning)
+		return gmrwt_table[d][l][r];
+	return imx568->mono ? gmrwt_mono_bin_table[d][l][r]
+			    : gmrwt_bin_table[d][l][r];
 }
 
 static u8 imx568_gmtwt(struct imx568 *imx568)
@@ -715,7 +802,10 @@ static u8 imx568_gmtwt(struct imx568 *imx568)
 	unsigned int l = imx568_lane_idx(imx568);
 	unsigned int r = imx568->link_freq_idx;
 
-	return imx568->binning ? gmtwt_bin_table[d][l][r] : gmtwt_table[d][l][r];
+	if (!imx568->binning)
+		return gmtwt_table[d][l][r];
+	return imx568->mono ? gmtwt_mono_bin_table[d][l][r]
+			    : gmtwt_bin_table[d][l][r];
 }
 
 static u8 imx568_gsdly(struct imx568 *imx568)
@@ -724,7 +814,10 @@ static u8 imx568_gsdly(struct imx568 *imx568)
 	unsigned int l = imx568_lane_idx(imx568);
 	unsigned int r = imx568->link_freq_idx;
 
-	return imx568->binning ? gsdly_bin_table[d][l][r] : gsdly_table[d][l][r];
+	if (!imx568->binning)
+		return gsdly_table[d][l][r];
+	return imx568->mono ? gsdly_mono_bin_table[d][l][r]
+			    : gsdly_bin_table[d][l][r];
 }
 
 static unsigned int imx568_shs_min(struct imx568 *imx568)
@@ -742,8 +835,9 @@ static bool imx568_compose_is_binning(const struct v4l2_rect *crop,
 
 static unsigned int imx568_vblank_min(struct imx568 *imx568)
 {
-	unsigned int overhead = imx568->binning ? IMX568_VBLANK_OVERHEAD_BIN :
-						  IMX568_VBLANK_OVERHEAD;
+	unsigned int overhead = !imx568->binning ? IMX568_VBLANK_OVERHEAD :
+				imx568->mono ? IMX568_VBLANK_OVERHEAD_MONO_BIN :
+					       IMX568_VBLANK_OVERHEAD_BIN;
 
 	return overhead + imx568_gmrwt(imx568) + imx568_gmtwt(imx568) +
 	       imx568_gsdly(imx568);
@@ -812,33 +906,46 @@ static u32 imx568_roi_top_reg(struct imx568 *imx568)
 	return IMX568_PIXEL_ARRAY_HEIGHT - (crop->top + crop->height);
 }
 
+static u32 imx568_roi_left_reg(struct imx568 *imx568)
+{
+	const struct v4l2_rect *crop = &imx568->crop;
+	u32 right = crop->left + crop->width;
+
+	if (!imx568->hflip->val)
+		return crop->left;
+
+	return right >= IMX568_ROI_SPAN_WIDTH ? 0 : IMX568_ROI_SPAN_WIDTH - right;
+}
+
 static int imx568_write_dynamic_regs(struct imx568 *imx568)
 {
 	const struct v4l2_rect *crop = &imx568->crop;
 	bool roi_off = imx568_roi_is_off(imx568);
+	bool sub = imx568->binning && !imx568->mono;
 	int ret = 0;
 
 	imx568_reghold(imx568, true);
 
 	ret = imx568_write_reg(imx568, IMX568_REG_HVMODE, 1,
-			       imx568->binning ? IMX568_REG_HVMODE_BINNING :
-						 IMX568_REG_HVMODE_ALLPIX);
+			       !imx568->binning ? IMX568_REG_HVMODE_ALLPIX :
+			       imx568->mono ? IMX568_REG_HVMODE_MONO_BIN :
+					      IMX568_REG_HVMODE_BINNING);
 	if (!ret)
 		ret = imx568_write_reg(imx568, IMX568_REG_LLBLANK, 2,
-				       imx568->binning ? IMX568_LLBLANK_BIN :
-							 IMX568_LLBLANK_ALLPIX);
+				       sub ? IMX568_LLBLANK_BIN :
+					     IMX568_LLBLANK_ALLPIX);
 	if (!ret)
 		ret = imx568_write_reg(imx568, IMX568_REG_VINT_EN, 1,
-				       imx568->binning ? IMX568_VINT_EN_BIN :
-							 IMX568_VINT_EN_ALLPIX);
+				       sub ? IMX568_VINT_EN_BIN :
+					     IMX568_VINT_EN_ALLPIX);
 	if (!ret)
 		ret = imx568_write_reg(imx568, IMX568_REG_ANA_3521, 1,
-				       imx568->binning ? IMX568_ANA_3521_BIN :
-							 IMX568_ANA_3521_ALLPIX);
+				       sub ? IMX568_ANA_3521_BIN :
+					     IMX568_ANA_3521_ALLPIX);
 	if (!ret)
 		ret = imx568_write_reg(imx568, IMX568_REG_ANA_3546, 1,
-				       imx568->binning ? IMX568_ANA_3546_BIN :
-							 IMX568_ANA_3546_ALLPIX);
+				       sub ? IMX568_ANA_3546_BIN :
+					     IMX568_ANA_3546_ALLPIX);
 	if (!ret)
 		ret = imx568_write_reg(imx568, IMX568_REG_HVREVERSE, 1,
 				       (imx568->vflip->val ? 0x01 : 0x00) |
@@ -849,7 +956,7 @@ static int imx568_write_dynamic_regs(struct imx568 *imx568)
 						 IMX568_FID0_ROI_AREA1);
 	if (!ret && !roi_off) {
 		ret = imx568_write_reg(imx568, IMX568_REG_FID0_ROIPH1, 2,
-				       crop->left);
+				       imx568_roi_left_reg(imx568));
 		if (!ret)
 			ret = imx568_write_reg(imx568, IMX568_REG_FID0_ROIPV1,
 					       2, imx568_roi_top_reg(imx568));
@@ -874,6 +981,8 @@ static int imx568_write_dynamic_regs(struct imx568 *imx568)
 				       imx568_gmtwt(imx568));
 	if (!ret)
 		ret = imx568_write_reg(imx568, IMX568_REG_GAINDLY, 1,
+				       imx568->binning && imx568->mono ?
+				       IMX568_GAINDLY_VAL_MONO_BIN :
 				       IMX568_GAINDLY_VAL);
 	if (!ret)
 		ret = imx568_write_reg(imx568, IMX568_REG_GSDLY, 1,
@@ -892,7 +1001,8 @@ static int imx568_write_dynamic_regs(struct imx568 *imx568)
 
 static void imx568_set_default_format(struct imx568 *imx568)
 {
-	imx568->fmt_code = MEDIA_BUS_FMT_SRGGB12_1X12;
+	imx568->fmt_code = imx568->mono ? MEDIA_BUS_FMT_Y12_1X12 :
+					  MEDIA_BUS_FMT_SRGGB12_1X12;
 	imx568->binning = false;
 	imx568->out_width = IMX568_PIXEL_ARRAY_WIDTH;
 	imx568->out_height = IMX568_PIXEL_ARRAY_HEIGHT;
@@ -986,6 +1096,15 @@ static int imx568_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct i2c_client *client = v4l2_get_subdevdata(&imx568->sd);
 	int ret = 0;
 
+	if (ctrl->id == CHC5SENSOR_CID_TRIGGER_MODE) {
+		imx568->trig_mode = ctrl->val;
+		return 0;
+	}
+	if (ctrl->id == CHC5SENSOR_CID_SYNC_FOLLOWER) {
+		imx568->follower = ctrl->val;
+		return 0;
+	}
+
 	if (ctrl->id == V4L2_CID_VBLANK) {
 		imx568->vmax = imx568->out_height + ctrl->val;
 		imx568_adjust_exposure_range(imx568);
@@ -1040,6 +1159,10 @@ static int imx568_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = imx568_write_reg(imx568, IMX568_REG_HVREVERSE, 1,
 				       (imx568->vflip->val ? 0x01 : 0x00) |
 				       (imx568->hflip->val ? 0x02 : 0x00));
+		if (!ret && ctrl->id == V4L2_CID_HFLIP &&
+		    !imx568_roi_is_off(imx568))
+			ret = imx568_write_reg(imx568, IMX568_REG_FID0_ROIPH1,
+					       2, imx568_roi_left_reg(imx568));
 		if (!ret && ctrl->id == V4L2_CID_VFLIP &&
 		    !imx568_roi_is_off(imx568))
 			ret = imx568_write_reg(imx568, IMX568_REG_FID0_ROIPV1,
@@ -1077,19 +1200,36 @@ static int imx568_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 		container_of(ctrl->handler, struct imx568, ctrl_handler);
 
 	switch (ctrl->id) {
+	case CHC5SENSOR_CID_LINE_TIME_PS:
+		ctrl->val = (s32)div_u64((u64)imx568->hmax * 1000000000000ULL,
+					 IMX568_INTERNAL_CLOCK);
+		return 0;
+	case CHC5SENSOR_CID_FRAME_LINES:
+		ctrl->val = imx568->vmax;
+		return 0;
+	case CHC5SENSOR_CID_TRIGGER_EXP_OFFSET_NS:
+		ctrl->val = (s32)div_u64((u64)imx568_gmrwt(imx568) * imx568->hmax *
+					 1000000000ULL, IMX568_INTERNAL_CLOCK) +
+			    IMX568_TRIG_EXP_OFFSET_NS;
+		return 0;
 	case CHC5SENSOR_CID_OB_TOP:
-		ctrl->val = imx568->binning ? IMX568_SUB_TRIM_TOP
-					    : IMX568_VOB_LINES;
+		ctrl->val = !imx568->binning ? IMX568_VOB_LINES :
+			    imx568->mono ? IMX568_MONO_TRIM_TOP :
+					   IMX568_SUB_TRIM_TOP;
 		return 0;
 	case CHC5SENSOR_CID_OB_BOTTOM:
-		ctrl->val = imx568->binning ? IMX568_SUB_TRIM_BOTTOM : 0;
+		ctrl->val = !imx568->binning ? 0 :
+			    imx568->mono ? IMX568_MONO_TRIM_BOTTOM :
+					   IMX568_SUB_TRIM_BOTTOM;
 		return 0;
 	case CHC5SENSOR_CID_OB_ON_IMAGE_DT:
 		ctrl->val = imx568->binning ? 1 : 0;
 		return 0;
 	case CHC5SENSOR_CID_OB_LEFT:
+		ctrl->val = imx568->binning ? IMX568_SUB_TRIM_LEFT : 0;
+		return 0;
 	case CHC5SENSOR_CID_OB_RIGHT:
-		ctrl->val = 0;
+		ctrl->val = imx568->binning ? IMX568_SUB_TRIM_RIGHT : 0;
 		return 0;
 	}
 
@@ -1123,6 +1263,70 @@ static const struct v4l2_ctrl_config imx568_ob_ctrls[] = {
 	IMX568_OB_CTRL(CHC5SENSOR_CID_OB_ON_IMAGE_DT, "Optical Black On Image DT"),
 };
 
+static const char * const imx568_trig_mode_menu[] = { "Free Run", "Fast Trigger" };
+
+static const struct v4l2_ctrl_config imx568_trig_ctrls[] = {
+	{
+		.ops   = &imx568_ctrl_ops,
+		.id    = CHC5SENSOR_CID_TRIGGER_MODE,
+		.name  = "Trigger Mode",
+		.type  = V4L2_CTRL_TYPE_MENU,
+		.min   = 0,
+		.max   = CHC5SENSOR_TRIGGER_FAST,
+		.def   = CHC5SENSOR_TRIGGER_FREE_RUN,
+		.qmenu = imx568_trig_mode_menu,
+	}, {
+		.ops   = &imx568_ctrl_ops,
+		.id    = CHC5SENSOR_CID_TRIGGER_EXP_OFFSET_NS,
+		.name  = "Trigger Exposure Offset ns",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	},
+};
+
+static const struct v4l2_ctrl_config imx568_follow_ctrls[] = {
+	{
+		.ops   = &imx568_ctrl_ops,
+		.id    = CHC5SENSOR_CID_SYNC_FOLLOWER,
+		.name  = "Sync Follower",
+		.type  = V4L2_CTRL_TYPE_BOOLEAN,
+		.min   = 0,
+		.max   = 1,
+		.step  = 1,
+	}, {
+		.ops   = &imx568_ctrl_ops,
+		.id    = CHC5SENSOR_CID_FOLLOWER_XHS,
+		.name  = "Follower XHS",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 1,
+		.max   = 1,
+		.def   = 1,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY,
+	}, {
+		.ops   = &imx568_ctrl_ops,
+		.id    = CHC5SENSOR_CID_LINE_TIME_PS,
+		.name  = "Line Time ps",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	}, {
+		.ops   = &imx568_ctrl_ops,
+		.id    = CHC5SENSOR_CID_FRAME_LINES,
+		.name  = "Frame Lines",
+		.type  = V4L2_CTRL_TYPE_INTEGER,
+		.min   = 0,
+		.max   = INT_MAX,
+		.step  = 1,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE,
+	},
+};
+
 static int imx568_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
@@ -1132,6 +1336,14 @@ static int imx568_enum_mbus_code(struct v4l2_subdev *sd,
 
 	if (code->pad == IMAGE_PAD) {
 		struct imx568 *imx568 = to_imx568(sd);
+
+		if (imx568->mono) {
+			if (code->index >= ARRAY_SIZE(mono_codes))
+				return -EINVAL;
+
+			code->code = mono_codes[code->index];
+			return 0;
+		}
 
 		if (code->index >= (ARRAY_SIZE(codes) / 4))
 			return -EINVAL;
@@ -1441,8 +1653,11 @@ static int imx568_set_selection(struct v4l2_subdev *sd,
 		unsigned int compose_h = sel->r.height;
 		bool want_bin = imx568_compose_is_binning(&imx568->crop,
 							  compose_w, compose_h);
+		bool image = false;
 
 		if (want_bin) {
+			image = compose_w == IMX568_SUB_IMAGE_WIDTH &&
+				compose_h == IMX568_SUB_IMAGE_HEIGHT;
 			compose_w = IMX568_BINNING_WIDTH;
 			compose_h = IMX568_BINNING_HEIGHT;
 		} else {
@@ -1474,8 +1689,8 @@ static int imx568_set_selection(struct v4l2_subdev *sd,
 
 		sel->r.left = 0;
 		sel->r.top = 0;
-		sel->r.width = compose_w;
-		sel->r.height = compose_h;
+		sel->r.width = image ? IMX568_SUB_IMAGE_WIDTH : compose_w;
+		sel->r.height = image ? IMX568_SUB_IMAGE_HEIGHT : compose_h;
 	}
 
 	mutex_unlock(&imx568->mutex);
@@ -1489,8 +1704,22 @@ static int imx568_start_streaming(struct imx568 *imx568)
 	const struct imx568_reg_list *rate_list;
 	int ret;
 
+	if (imx568->reset_gpio && imx568->latched_follower != imx568->follower) {
+		gpiod_set_value_cansleep(imx568->reset_gpio, 0);
+		usleep_range(IMX568_XCLR_ASSERT_US, IMX568_XCLR_ASSERT_US * 2);
+		gpiod_set_value_cansleep(imx568->reset_gpio, 1);
+		usleep_range(IMX568_XCLR_MIN_DELAY_US,
+			     IMX568_XCLR_MIN_DELAY_US + IMX568_XCLR_DELAY_RANGE_US);
+		imx568->latched_follower = imx568->follower;
+		dev_info(&client->dev, "XCLR pulsed: %s\n",
+			 imx568->follower ? "follower" : "leader");
+	}
+
 	ret = imx568_write_regs(imx568, mode_common_regs,
 				ARRAY_SIZE(mode_common_regs));
+	if (!ret && !imx568->mono)
+		ret = imx568_write_reg(imx568, IMX568_REG_COLOUR_3797, 1,
+				       IMX568_COLOUR_3797_VAL);
 	if (ret) {
 		dev_err(&client->dev, "%s failed to set common settings\n",
 			__func__);
@@ -1533,12 +1762,33 @@ static int imx568_start_streaming(struct imx568 *imx568)
 	if (ret)
 		return ret;
 
+	if (imx568->follower && imx568->trig_mode == CHC5SENSOR_TRIGGER_FAST)
+		dev_warn(&client->dev, "Fast Trigger is master-only: follower runs without it\n");
+	ret = imx568_write_reg(imx568, IMX568_REG_TRIGMODE, 1,
+			       !imx568->follower &&
+			       imx568->trig_mode == CHC5SENSOR_TRIGGER_FAST ?
+			       IMX568_TRIGMODE_FAST : 0x00);
+	if (ret)
+		return ret;
+
+	ret = imx568_write_reg(imx568, IMX568_REG_SYNCSEL, 1,
+			       imx568->follower ? IMX568_SYNCSEL_HIZ :
+						  IMX568_SYNCSEL_DRIVEN);
+	if (ret)
+		return ret;
+
+	ret = imx568_write_reg(imx568, IMX568_REG_TOUT0SEL, 1, IMX568_TOUT0SEL_EXPOSURE);
+	if (ret)
+		return ret;
+
 	ret = imx568_write_reg(imx568, IMX568_REG_STANDBY, 1, 0x00);
 	if (ret)
 		return ret;
 
 	msleep(30);
 
+	if (imx568->follower)
+		return 0;
 	return imx568_write_reg(imx568, IMX568_REG_XMSTA, 1, 0x00);
 }
 
@@ -1616,6 +1866,9 @@ static int imx568_power_on(struct device *dev)
 		return ret;
 	}
 
+	gpiod_set_value_cansleep(imx568->reset_gpio, 0);
+	usleep_range(IMX568_XCLR_ASSERT_US, IMX568_XCLR_ASSERT_US * 2);
+
 	ret = clk_prepare_enable(imx568->xclk);
 	if (ret) {
 		dev_err(&client->dev, "%s: failed to enable clock\n",
@@ -1626,6 +1879,7 @@ static int imx568_power_on(struct device *dev)
 	gpiod_set_value_cansleep(imx568->reset_gpio, 1);
 	usleep_range(IMX568_XCLR_MIN_DELAY_US,
 		     IMX568_XCLR_MIN_DELAY_US + IMX568_XCLR_DELAY_RANGE_US);
+	imx568->latched_follower = imx568->reset_gpio ? imx568->follower : -1;
 
 	return 0;
 
@@ -1693,6 +1947,43 @@ static int imx568_get_regulators(struct imx568 *imx568)
 				       imx568->supplies);
 }
 
+static int imx568_check_chromacity(struct imx568 *imx568)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(&imx568->sd);
+	bool mono_die;
+	u32 val = 0;
+	int ret;
+
+	ret = imx568_write_reg(imx568, IMX568_REG_STANDBY, 1, 0x00);
+	if (ret)
+		goto unread;
+	usleep_range(7000, 8000);
+	ret = imx568_read_reg(imx568, IMX568_REG_CHROMACITY, 1, &val);
+
+	if (imx568_write_reg(imx568, IMX568_REG_STANDBY, 1, 0x01)) {
+		dev_err(&client->dev, "failed to return to standby\n");
+		return -EIO;
+	}
+	usleep_range(7000, 8000);
+	if (ret)
+		goto unread;
+
+	mono_die = val & IMX568_CHROMACITY_MONO;
+	if (mono_die != imx568->mono)
+		dev_warn(&client->dev,
+			 "this is the %s part but the device tree sets it up as %s -- the sensor archive is for the other part\n",
+			 mono_die ? "MONO" : "COLOUR",
+			 imx568->mono ? "mono" : "colour");
+	else
+		dev_info(&client->dev, "%s part\n", mono_die ? "mono" : "colour");
+
+	return 0;
+
+unread:
+	dev_warn(&client->dev, "could not read the colour/mono bit: %d\n", ret);
+	return 0;
+}
+
 static int imx568_identify_module(struct imx568 *imx568)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&imx568->sd);
@@ -1716,7 +2007,7 @@ static int imx568_identify_module(struct imx568 *imx568)
 	dev_info(&client->dev, "IMX568 found on %s\n",
 		 dev_name(&client->adapter->dev));
 
-	return 0;
+	return imx568_check_chromacity(imx568);
 }
 
 static const struct v4l2_subdev_core_ops imx568_core_ops = {
@@ -1756,7 +2047,7 @@ static int imx568_init_controls(struct imx568 *imx568)
 	int ret;
 
 	ctrl_hdlr = &imx568->ctrl_handler;
-	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 16);
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 22);
 	if (ret)
 		return ret;
 
@@ -1816,6 +2107,13 @@ static int imx568_init_controls(struct imx568 *imx568)
 
 	for (i = 0; i < ARRAY_SIZE(imx568_ob_ctrls); i++)
 		v4l2_ctrl_new_custom(ctrl_hdlr, &imx568_ob_ctrls[i], NULL);
+
+	for (i = 0; i < ARRAY_SIZE(imx568_trig_ctrls); i++)
+		v4l2_ctrl_new_custom(ctrl_hdlr, &imx568_trig_ctrls[i], NULL);
+
+	if (imx568->reset_gpio)
+		for (i = 0; i < ARRAY_SIZE(imx568_follow_ctrls); i++)
+			v4l2_ctrl_new_custom(ctrl_hdlr, &imx568_follow_ctrls[i], NULL);
 
 	if (ctrl_hdlr->error) {
 		ret = ctrl_hdlr->error;
@@ -1929,6 +2227,10 @@ static int imx568_probe(struct i2c_client *client)
 	if (imx568_check_hwcfg(dev, imx568))
 		return -EINVAL;
 
+	imx568->mono = of_property_read_bool(dev->of_node, "mono-mode");
+	if (imx568->mono)
+		dev_info(dev, "configured for the mono sensor variant\n");
+
 	imx568->xclk = devm_clk_get(dev, NULL);
 	if (IS_ERR(imx568->xclk)) {
 		dev_err(dev, "failed to get xclk\n");
@@ -1949,7 +2251,7 @@ static int imx568_probe(struct i2c_client *client)
 	}
 
 	imx568->reset_gpio = devm_gpiod_get_optional(dev, "reset",
-						     GPIOD_OUT_HIGH);
+						     GPIOD_OUT_LOW);
 
 	ret = imx568_power_on(dev);
 	if (ret)

@@ -23,6 +23,8 @@ static struct camcfg_state_s g_state;
 static pthread_mutex_t       g_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t        g_dirty_cond;
 static uint32_t              g_dirty_flags;
+static uint32_t              g_stream_start_gen;
+static uint32_t              g_pending_gen;
 static bool                  g_shutdown;
 
 static uint8_t g_hdmi_standalone;
@@ -38,6 +40,8 @@ static bool g_host_ae_gain;
 static bool g_ae_converged;
 static uint32_t g_ae_exp_lower_us;
 static uint32_t g_ae_exp_upper_us;
+static uint16_t g_ae_gain_lower_db10;
+static uint16_t g_ae_gain_upper_db10 = CFG_AE_GAIN_UNSET;
 
 static uint32_t g_link_bw_limit[2];
 static bool     g_link_bw_on[2] = { true, true };
@@ -97,8 +101,10 @@ void config_set_pipeline_ready(bool ready)
 int    g_sensor_mono  = 0;
 int    g_orient_hflip = 0;
 int    g_bayer_order = 0;
+int    g_cfa_table = 0;
+static uint8_t g_usb_seq_seen, g_usb_seq_applied;
+static bool    g_usb_seq_seen_ok;
 int    g_orient_vflip = 0;
-bool     g_sensor_caps_looked = false;
 uint32_t g_sensor_width = 0, g_sensor_height = 0;
 uint32_t g_width_min = 0,    g_height_min = 0;
 uint32_t g_width_inc = 0,    g_height_inc = 0;
@@ -124,6 +130,9 @@ uint8_t g_camio_cap_xvs_out    = 2;
 uint8_t g_camio_cap_xvs_in     = 2;
 uint8_t g_camio_cap_has_xtrig  = 2;
 uint8_t g_camio_cap_has_strobe = 2;
+uint8_t g_camio_strobe_low     = 0;
+uint8_t g_camio_fact_role_by    = 0xFF;
+uint8_t g_camio_fact_trig_route = 0xFF;
 
 float    g_awb_gain_min = 0.25f;
 float    g_awb_gain_max = 4.0f;
@@ -463,7 +472,6 @@ void config_load_sensor_caps(void)
     static time_t last_mtime = 0;
     const char *path = "/var/lib/chc5_platformd/sensors/sensor_caps";
     struct stat stt;
-    g_sensor_caps_looked = true;
     if (stat(path, &stt) != 0) { last_mtime = 0; return; }
     if (stt.st_mtime == last_mtime) return;
     last_mtime = stt.st_mtime;
@@ -475,10 +483,13 @@ void config_load_sensor_caps(void)
     g_ccm_ct_n    = 0;
     g_camio_cap_has_xvs = g_camio_cap_xvs_out = g_camio_cap_xvs_in = 2;
     g_camio_cap_has_xtrig = g_camio_cap_has_strobe = 2;
+    g_camio_strobe_low = 0;
+    g_camio_fact_role_by = g_camio_fact_trig_route = 0xFF;
     g_sensor_mono = 0;
     g_orient_hflip = 0;
     g_orient_vflip = 0;
     g_bayer_order = 0;
+    g_cfa_table = 0;
     g_sensor_width = g_sensor_height = 0;
     g_width_min = g_height_min = 0;
     g_width_inc = g_height_inc = 0;
@@ -505,6 +516,8 @@ void config_load_sensor_caps(void)
             g_sensor_mono = (int)v;
         else if (sscanf(line, "bayer_order=%u", &v) == 1 && v <= 4u)
             g_bayer_order = (int)v;
+        else if (sscanf(line, "cfa_table=%x", &v) == 1 && v <= 0xFFu)
+            g_cfa_table = (int)v;
         else if (sscanf(line, "orient_hflip=%u", &v) == 1 && v <= 1u)
             g_orient_hflip = (int)v;
         else if (sscanf(line, "orient_vflip=%u", &v) == 1 && v <= 1u)
@@ -583,6 +596,15 @@ void config_load_sensor_caps(void)
             g_camio_cap_has_xtrig = (uint8_t)v;
         else if (sscanf(line, "camio_has_strobe=%u", &v) == 1 && v <= 2u)
             g_camio_cap_has_strobe = (uint8_t)v;
+        else if (sscanf(line, "camio_strobe_active_low=%u", &v) == 1 && v <= 1u)
+            g_camio_strobe_low = (uint8_t)v;
+        else if (!strncmp(line, "camio_role=", 11))
+            g_camio_fact_role_by = !strncmp(line + 11, "pin", 3) ? CHC5CAMIO_ROLEBY_PIN
+                                 : !strncmp(line + 11, "i2c", 3) ? CHC5CAMIO_ROLEBY_I2C : 0xFF;
+        else if (!strncmp(line, "camio_trigger=", 14))
+            g_camio_fact_trig_route = !strncmp(line + 14, "xtrig", 5) ? CHC5CAMIO_TRIGROUTE_XTRIG
+                                    : !strncmp(line + 14, "xvs", 3)   ? CHC5CAMIO_TRIGROUTE_XVS_SLAVE
+                                    : !strncmp(line + 14, "none", 4)  ? 0xFE : 0xFF;
         else if (sscanf(line, "lux_ref_exp_us=%u", &v) == 1 && v <= 30000000u)
             g_lux_ref_exp_us = v;
         else if (sscanf(line, "lux_ref_gain_code=%u", &v) == 1 && v <= 65535u)
@@ -832,7 +854,8 @@ static void publish_readback(uint32_t exp_us, uint16_t gain,
                              bool ae_exp_active, bool ae_gain_active,
                              bool converged, float res_fps,
                              uint32_t pixfmt_usb, uint8_t cfa_order,
-                             uint8_t flip_echo)
+                             uint8_t flip_echo, uint8_t applied_seq,
+                             uint8_t line_levels)
 {
     static int     rb_fd  = -1;
     static bool    tried  = false;
@@ -848,8 +871,8 @@ static void publish_readback(uint32_t exp_us, uint16_t gain,
             return;
     }
 
-    if (res_fps < 0.0f)   res_fps = 0.0f;
-    if (res_fps > 655.0f) res_fps = 655.0f;
+    if (res_fps < 0.0f)       res_fps = 0.0f;
+    if (res_fps > 1000000.0f) res_fps = 1000000.0f;
 
     memset(&rb, 0, sizeof(rb));
     rb.ae_status   = (uint8_t)((ae_exp_active  ? RB_AE_STATUS_EXP_ACTIVE  : 0) |
@@ -857,11 +880,14 @@ static void publish_readback(uint32_t exp_us, uint16_t gain,
                                (converged      ? RB_AE_STATUS_CONVERGED   : 0));
     rb.exposure_us = exp_us;
     rb.analog_gain = gain;
-    rb.fps_x100    = (uint16_t)(res_fps * 100.0f + 0.5f);
+    rb.fps_mhz     = (uint32_t)((double)res_fps * 1000.0 + 0.5);
     rb.temp_c_x10  = readback_soc_temp_x10();
     rb.pixfmt_usb  = pixfmt_usb;
     rb.cfa_order   = cfa_order;
     rb.flip_echo   = flip_echo;
+    rb.line_levels = line_levels;
+    rb.applied_seq = applied_seq;
+    rb.rb_flags    = RB_F_APPLIED_SEQ;
     rb.rb_seq      = ++rb_seq;
     rb.rb_seq_echo = rb_seq;
 
@@ -872,7 +898,9 @@ static void publish_readback(uint32_t exp_us, uint16_t gain,
     }
 }
 
-void config_publish_exposure(void)
+static pthread_mutex_t g_publish_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void publish_exposure_locked(void)
 {
     pthread_mutex_lock(&g_lock);
     uint32_t exp_us = g_state.ae_exposure_auto ? g_state.ae_current_exposure_us
@@ -885,9 +913,13 @@ void config_publish_exposure(void)
     uint32_t pixfmt_usb = g_state.pixfmt_usb;
     uint8_t  cfa_order  = g_state.live_cfa_order;
     uint8_t  flip_echo  = g_state.live_cfa_flips;
+    uint8_t  applied_seq = g_usb_seq_applied;
     bool ae_once    = g_state.ae_once_exposure || g_state.ae_once_gain;
     int  owner      = (int)g_stream_owner_kind;
     float res_fps   = (g_actual_fps > 0.0f) ? g_actual_fps : g_state.fps_precise;
+    uint32_t sched_mhz = camio_sync_sched_rate_mhz();
+    if (sched_mhz)
+        res_fps = (float)sched_mhz / 1000.0f;
     bool converged  = g_ae_converged;
     pthread_mutex_unlock(&g_lock);
     bool ae_active = (ae_exp || ae_gain) && streaming;
@@ -917,10 +949,20 @@ void config_publish_exposure(void)
         fclose(f);
     }
 
+    uint32_t levels = 0;
+    (void)camio_sync_line_levels(&levels);
     publish_readback(exp_us, gain,
                      ae_exp && streaming, ae_gain && streaming,
                      ae_active && converged, res_fps,
-                     pixfmt_usb, cfa_order, flip_echo);
+                     pixfmt_usb, cfa_order, flip_echo, applied_seq,
+                     (uint8_t)levels);
+}
+
+void config_publish_exposure(void)
+{
+    pthread_mutex_lock(&g_publish_lock);
+    publish_exposure_locked();
+    pthread_mutex_unlock(&g_publish_lock);
 }
 
 static void set_defaults(void)
@@ -930,7 +972,7 @@ static void set_defaults(void)
     g_state.sensor_cfg.width        = 2032;
     g_state.sensor_cfg.height       = 1080;
     g_state.sensor_cfg.pixel_format = GVSP_PIX_BAYERRG12;
-    g_state.sensor_cfg.fps          = 30;
+    g_state.sensor_cfg.fps_mhz      = 30000;
     g_state.fps_precise             = 30.0f;
     g_state.sensor_cfg.exposure_us  = 10000;
     g_state.sensor_cfg.analog_gain  = 0;
@@ -982,6 +1024,8 @@ void config_destroy(void)
 
 static void mark_dirty(uint32_t flags)
 {
+    if (flags & (DIRTY_CAMIO | DIRTY_STREAM))
+        camio_sync_note_change();
     g_dirty_flags |= flags;
     pthread_cond_signal(&g_dirty_cond);
 }
@@ -1064,7 +1108,7 @@ void config_set_sensor(const imgsensor_cfg_t *cfg, uint8_t source)
     g_state.sensor_cfg.stream_enable = saved_stream;
     g_state.sensor_cfg.pixel_format  = ingest_pixfmt(cfg->pixel_format);
     g_state.sensor_cfg_source = source;
-    g_state.fps_precise = (float)cfg->fps;
+    g_state.fps_precise = (float)cfg->fps_mhz / 1000.0f;
 
     uint32_t flags = DIRTY_SENSOR_CTRL;
 
@@ -1073,6 +1117,7 @@ void config_set_sensor(const imgsensor_cfg_t *cfg, uint8_t source)
             flags |= DIRTY_PIPELINE_FMT;
         } else {
             g_state.fmt_pending = true;
+            g_pending_gen++;
         }
     }
 
@@ -1081,6 +1126,7 @@ void config_set_sensor(const imgsensor_cfg_t *cfg, uint8_t source)
             flags |= DIRTY_PIXPACK;
         } else {
             g_state.pixpack_pending = true;
+            g_pending_gen++;
         }
     }
 
@@ -1142,6 +1188,7 @@ void config_set_resolution(uint16_t w, uint16_t h)
             mark_dirty(DIRTY_PIPELINE_FMT | DIRTY_SENSOR_CTRL);
         } else {
             g_state.fmt_pending = true;
+            g_pending_gen++;
             mark_dirty(DIRTY_SENSOR_CTRL);
         }
     }
@@ -1164,6 +1211,7 @@ void config_set_offset(uint16_t x, uint16_t y)
             mark_dirty(DIRTY_PIPELINE_FMT);
         } else {
             g_state.fmt_pending = true;
+            g_pending_gen++;
         }
     }
     pthread_mutex_unlock(&g_lock);
@@ -1172,7 +1220,7 @@ void config_set_offset(uint16_t x, uint16_t y)
 void config_set_fps(uint16_t fps)
 {
     pthread_mutex_lock(&g_lock);
-    g_state.sensor_cfg.fps = fps;
+    g_state.sensor_cfg.fps_mhz = (uint32_t)fps * 1000u;
     g_state.fps_precise = (float)fps;
     mark_dirty(DIRTY_SENSOR_CTRL);
     pthread_mutex_unlock(&g_lock);
@@ -1181,7 +1229,7 @@ void config_set_fps(uint16_t fps)
 void config_set_fps_f(float fps)
 {
     pthread_mutex_lock(&g_lock);
-    g_state.sensor_cfg.fps = (uint16_t)(fps + 0.5f);
+    g_state.sensor_cfg.fps_mhz = (fps > 0.0f) ? (uint32_t)((double)fps * 1000.0 + 0.5) : 0u;
     g_state.fps_precise = fps;
     mark_dirty(DIRTY_SENSOR_CTRL);
     pthread_mutex_unlock(&g_lock);
@@ -1227,6 +1275,7 @@ void config_set_pixfmt_usb(uint32_t pfnc)
             mark_dirty(DIRTY_PIXPACK);
         } else {
             g_state.pixpack_pending = true;
+            g_pending_gen++;
         }
         LOG_INFO("config: pixfmt = 0x%08X (from USB)%s", pfnc,
                  g_state.stream_active ? "" : " (pending)");
@@ -1253,6 +1302,7 @@ void config_set_pixfmt_eth(uint32_t pfnc)
             mark_dirty(DIRTY_PIXPACK);
         } else {
             g_state.pixpack_pending = true;
+            g_pending_gen++;
         }
         LOG_INFO("config: pixfmt = 0x%08X (from ETH)%s", pfnc,
                  g_state.stream_active ? "" : " (pending)");
@@ -1264,6 +1314,8 @@ void config_set_stream(bool enable)
 {
     pthread_mutex_lock(&g_lock);
     g_state.sensor_cfg.stream_enable = enable ? 1 : 0;
+    if (enable)
+        g_stream_start_gen++;
     g_stream_owner_kind = enable ? SOWN_HOST : SOWN_NONE;
     g_host_stream_on    = enable;
     if (enable)
@@ -1324,14 +1376,41 @@ void config_mark_stream_dirty(void)
     pthread_mutex_unlock(&g_lock);
 }
 
-static struct camio_cfg g_camio;
-
-void config_set_camio(const struct camio_cfg *c)
+void config_mark_sensor_ctrl_dirty(void)
 {
     pthread_mutex_lock(&g_lock);
-    g_camio = *c;
-    mark_dirty(DIRTY_CAMIO);
+    mark_dirty(DIRTY_SENSOR_CTRL);
     pthread_mutex_unlock(&g_lock);
+}
+
+static struct camio_cfg g_camio;
+
+void config_update_camio(const struct camio_cfg *c, uint32_t mask)
+{
+    mask = camio_sync_check(c, mask);
+    if (!mask)
+        return;
+    pthread_mutex_lock(&g_lock);
+    struct camio_cfg before = g_camio;
+    camio_cfg_merge(&g_camio, c, mask);
+    if ((mask & CAMIO_F(SYNC_ROLE)) && !(mask & CAMIO_F(IN_FUNCTION)) &&
+        g_camio.sync_role != CHC5CAMIO_ROLE_SLAVE &&
+        g_camio.in_function == CHC5CAMIO_IN_SYNCIN)
+        g_camio.in_function = CHC5CAMIO_IN_OFF;
+    if (!g_camio.present || camio_cfg_diff(&before, &g_camio)) {
+        g_camio.present = 1;
+        mark_dirty(DIRTY_CAMIO);
+    }
+    pthread_mutex_unlock(&g_lock);
+}
+
+void config_get_camio_facts(struct camio_facts *f)
+{
+    f->role_by    = g_camio_fact_role_by;
+    f->trig_route = g_camio_fact_trig_route;
+    f->has_strobe = g_camio_cap_has_strobe;
+    f->strobe_low = g_camio_strobe_low;
+    f->xvs_out    = g_camio_cap_has_xvs == 0 ? 0 : g_camio_cap_xvs_out;
 }
 
 void config_get_camio(struct camio_cfg *out)
@@ -1341,10 +1420,71 @@ void config_get_camio(struct camio_cfg *out)
     pthread_mutex_unlock(&g_lock);
 }
 
+static void publish_aux_image(const struct camio_cfg *c)
+{
+    static int     fd = -1;
+    static bool    tried;
+    static uint8_t seq;
+    static chc5_aux_applied_t last;
+    chc5_aux_applied_t img;
+
+    memset(&img, 0, sizeof(img));
+    img.flags = (uint8_t)((c->in_invert      ? CHC5_AUX_F_IN_INVERT  : 0) |
+                          (c->strobe_enable  ? CHC5_AUX_F_STROBE_EN  : 0) |
+                          (c->strobe_invert  ? CHC5_AUX_F_STROBE_INV : 0) |
+                          (c->out_invert     ? CHC5_AUX_F_OUT_INVERT : 0) |
+                          (c->out_user_value ? CHC5_AUX_F_OUT_USER   : 0));
+    img.in_function      = c->in_function;
+    img.in_activation    = c->in_activation;
+    img.out_source       = c->out_source;
+    img.strobe_src       = c->strobe_src;
+    img.sync_role        = c->sync_role;
+    img.trig_src         = c->trig_src == CHC5CAMIO_TRIG_SRC_LINE0 ? 0 : 1;
+    img.trig_flags       = c->width_mode ? CHC5_AUX_TF_WIDTH_MODE : 0;
+    img.io_caps          = (uint8_t)camio_sync_io_caps();
+    img.trigger_divider  = c->trigger_divider;
+    img.trigger_delay_us = (c->trigger_delay_ns + 500u) / 1000u;
+    img.strobe_delay_us    = c->strobe_delay_us;
+    img.strobe_duration_us = c->strobe_duration_us;
+    img.strobe_minon_us    = c->strobe_minon_us;
+    img.in_filter_us     = (uint16_t)((c->in_filter_ns + 500u) / 1000u);
+    {
+        uint32_t ss = 0;
+        if (camio_sync_hw_state() == 1)
+            (void)camio_sync_read_status(NULL, NULL, &ss);
+        img.sync_status  = (uint8_t)(ss & CHC5CAMIO_SYNC_STATUS_BITS);
+    }
+    if (seq && !memcmp(&img, &last, sizeof(img)))
+        return;
+
+    if (fd < 0) {
+        if (tried)
+            return;
+        tried = true;
+        fd = open(USB_CHARDEV_PATH, O_WRONLY);
+        if (fd < 0)
+            return;
+    }
+    last = img;
+    if (++seq == 0)
+        seq = 1;
+    img.seq = img.seq_echo = seq;
+    if (pwrite(fd, &img, sizeof(img), CHC5_AUXIMG_OFFSET) != (ssize_t)sizeof(img)) {
+        close(fd);
+        fd = -1;
+        tried = false;
+        seq--;
+        memset(&last, 0xFF, sizeof(last));
+    }
+}
+
 void config_publish_camio(void)
 {
     struct camio_cfg c;
     config_get_camio(&c);
+    publish_aux_image(&c);
+    c.sync_role_by    = g_camio_fact_role_by;
+    c.sync_trig_route = g_camio_fact_trig_route;
 
     FILE *f = fopen("/run/camcfgd/camio", "w");
     if (!f)
@@ -1353,6 +1493,9 @@ void config_publish_camio(void)
                                         c.out_source  || c.sync_role);
 
     int st_locked = -1, st_optoin = -1;
+    uint32_t sched_st = 0, line_levels = 0;
+    (void)camio_sync_sched_status(&sched_st);
+    (void)camio_sync_line_levels(&line_levels);
     if (camio_sync_hw_state() == 1) {
         uint32_t status = 0, in_status = 0, sync_status = 0;
         if (camio_sync_read_status(&status, &in_status, &sync_status) == 0) {
@@ -1366,27 +1509,30 @@ void config_publish_camio(void)
             "st_locked=%d\nst_optoin=%d\n"
             "in_function=%u\nin_activation=%u\nin_invert=%u\n"
             "trigger_delay_us=%u\ntrigger_divider=%u\n"
-            "strobe_enable=%u\nstrobe_invert=%u\nstrobe_src=%u\n"
+            "strobe_enable=%u\nstrobe_src=%u\n"
             "strobe_delay_us=%u\n"
             "strobe_duration_us=%u\nstrobe_minon_us=%u\n"
             "out_source=%u\nout_invert=%u\nout_user_value=%u\n"
             "sync_role=%u\nsync_role_by=%u\n"
             "sync_trig_route=%u\n"
-            "cap_has_xvs=%u\ncap_xvs_out=%u\ncap_xvs_in=%u\n"
-            "cap_has_xtrig=%u\ncap_has_strobe=%u\ncap_ptp_pulse=%d\n",
+            "trig_src=%u\nwidth_mode=%u\nin_filter_us=%u\n"
+            "sync_enable=%u\nsync_rate_mhz=%u\n"
+            "sync_source=%d\nsched_status=%u\nline_levels=%u\n"
+            "io_caps=%u\n",
             c.present, enable_eff, camio_sync_hw_state(),
             st_locked, st_optoin,
             c.in_function, c.in_activation, c.in_invert,
-            c.trigger_delay_us, c.trigger_divider,
-            c.strobe_enable, c.strobe_invert, c.strobe_src,
+            (c.trigger_delay_ns + 500u) / 1000u, c.trigger_divider,
+            c.strobe_enable, c.strobe_src,
             c.strobe_delay_us,
             c.strobe_duration_us, c.strobe_minon_us,
             c.out_source, c.out_invert, c.out_user_value,
             c.sync_role, c.sync_role_by,
             c.sync_trig_route,
-            g_camio_cap_has_xvs, g_camio_cap_xvs_out, g_camio_cap_xvs_in,
-            g_camio_cap_has_xtrig, g_camio_cap_has_strobe,
-            camio_sync_has_ptp_pulse());
+            c.trig_src, c.width_mode, (c.in_filter_ns + 500u) / 1000u,
+            c.sched_enable, chc5camio_ps_to_mhz(c.sched_period_ps),
+            camio_sync_source(), sched_st, line_levels,
+            camio_sync_io_caps());
     fclose(f);
 }
 void config_clear_pending(void)
@@ -1394,6 +1540,16 @@ void config_clear_pending(void)
     pthread_mutex_lock(&g_lock);
     g_state.fmt_pending = false;
     g_state.pixpack_pending = false;
+    pthread_mutex_unlock(&g_lock);
+}
+
+void config_clear_pending_seen(uint32_t pending_gen)
+{
+    pthread_mutex_lock(&g_lock);
+    if (g_pending_gen == pending_gen) {
+        g_state.fmt_pending = false;
+        g_state.pixpack_pending = false;
+    }
     pthread_mutex_unlock(&g_lock);
 }
 
@@ -1489,8 +1645,8 @@ void config_apply_imaging(uint16_t hdmi_max_fps, uint16_t hdmi_crop_x,
     if (fps_changed) {
         flags |= DIRTY_SENSOR_CTRL;
         if (hdmi_standalone && !g_state.usb_active && !g_state.eth_active) {
-            g_state.sensor_cfg.fps = hdmi_max_fps;
-            g_state.fps_precise    = (float)hdmi_max_fps;
+            g_state.sensor_cfg.fps_mhz = (uint32_t)hdmi_max_fps * 1000u;
+            g_state.fps_precise        = (float)hdmi_max_fps;
         }
     }
     if (hdmi_en_changed) flags |= DIRTY_SENSOR_CTRL;
@@ -1662,6 +1818,53 @@ void config_set_ae_exp_upper_us(uint32_t us)
     g_ae_exp_upper_us = us;
     pthread_mutex_unlock(&g_lock);
 }
+
+uint32_t config_get_ae_exp_lower_us(void)
+{
+    pthread_mutex_lock(&g_lock);
+    uint32_t v = g_ae_exp_lower_us;
+    pthread_mutex_unlock(&g_lock);
+    return v;
+}
+
+uint32_t config_get_ae_exp_upper_us(void)
+{
+    pthread_mutex_lock(&g_lock);
+    uint32_t v = g_ae_exp_upper_us;
+    pthread_mutex_unlock(&g_lock);
+    return v;
+}
+
+void config_set_ae_gain_limits_db10(uint16_t lower, uint16_t upper)
+{
+    pthread_mutex_lock(&g_lock);
+    g_ae_gain_lower_db10 = lower;
+    g_ae_gain_upper_db10 = upper;
+    pthread_mutex_unlock(&g_lock);
+}
+
+void config_set_ae_gain_lower_db10(uint16_t v)
+{
+    pthread_mutex_lock(&g_lock);
+    g_ae_gain_lower_db10 = v;
+    pthread_mutex_unlock(&g_lock);
+}
+
+void config_set_ae_gain_upper_db10(uint16_t v)
+{
+    pthread_mutex_lock(&g_lock);
+    g_ae_gain_upper_db10 = v;
+    pthread_mutex_unlock(&g_lock);
+}
+
+void config_get_ae_gain_limits_db10(uint16_t *lower, uint16_t *upper)
+{
+    pthread_mutex_lock(&g_lock);
+    *lower = g_ae_gain_lower_db10;
+    *upper = g_ae_gain_upper_db10;
+    pthread_mutex_unlock(&g_lock);
+}
+
 void config_set_link_bw_limit(int link, uint32_t bps)
 {
     if (link < 0 || link > 1) return;
@@ -1744,8 +1947,10 @@ void config_set_reverse_x(bool enable)
         LOG_INFO("config: ReverseX %s", enable ? "ON" : "OFF");
         if (g_state.stream_active)
             mark_dirty(DIRTY_PIPELINE_FMT);
-        else
+        else {
             g_state.fmt_pending = true;
+            g_pending_gen++;
+        }
     }
     pthread_mutex_unlock(&g_lock);
 }
@@ -1763,8 +1968,10 @@ void config_set_reverse_y(bool enable)
         LOG_INFO("config: ReverseY %s", enable ? "ON" : "OFF");
         if (g_state.stream_active)
             mark_dirty(DIRTY_PIPELINE_FMT);
-        else
+        else {
             g_state.fmt_pending = true;
+            g_pending_gen++;
+        }
     }
     pthread_mutex_unlock(&g_lock);
 }
@@ -1954,7 +2161,7 @@ void config_hdmi_standalone_tick(void)
         config_get_sensor(&cfg);
         cfg.width   = 1920;
         cfg.height  = 1080;
-        cfg.fps     = hdmi_fps;
+        cfg.fps_mhz = (uint32_t)hdmi_fps * 1000u;
 
         cfg.binning = (g_binning_max_h >= 2 && g_binning_max_v >= 2)
                     ? 0x11
@@ -2019,6 +2226,59 @@ void config_get_hdmi_crop(uint16_t *x, uint16_t *y, uint8_t *automatic)
     if (y) *y = g_state.imaging.hdmi_crop_y;
     if (automatic) *automatic = g_state.imaging.hdmi_crop_auto;
     pthread_mutex_unlock(&g_lock);
+}
+
+void config_usb_block_seen(uint8_t write_seq)
+{
+    pthread_mutex_lock(&g_lock);
+    g_usb_seq_seen = write_seq;
+    g_usb_seq_seen_ok = true;
+    mark_dirty(DIRTY_USB_ACK);
+    pthread_mutex_unlock(&g_lock);
+}
+
+bool config_get_usb_block_seen(uint8_t *write_seq)
+{
+    bool ok;
+    pthread_mutex_lock(&g_lock);
+    *write_seq = g_usb_seq_seen;
+    ok = g_usb_seq_seen_ok;
+    pthread_mutex_unlock(&g_lock);
+    return ok;
+}
+
+void config_set_usb_block_applied(uint8_t write_seq)
+{
+    pthread_mutex_lock(&g_lock);
+    g_usb_seq_applied = write_seq;
+    pthread_mutex_unlock(&g_lock);
+}
+
+uint32_t config_wait_dirty_snapshot(struct camcfg_snapshot_s *snap)
+{
+    struct timespec ts;
+    pthread_mutex_lock(&g_lock);
+
+    if (g_dirty_flags == 0 && !g_shutdown) {
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        ts.tv_nsec += 500000000;
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec  += 1;
+            ts.tv_nsec -= 1000000000;
+        }
+        pthread_cond_timedwait(&g_dirty_cond, &g_lock, &ts);
+    }
+
+    uint32_t flags = g_dirty_flags;
+    g_dirty_flags = 0;
+    memcpy(&snap->state, &g_state, sizeof(snap->state));
+    snap->usb_seq     = g_usb_seq_seen;
+    snap->usb_seq_ok  = g_usb_seq_seen_ok;
+    snap->start_gen   = g_stream_start_gen;
+    snap->pending_gen = g_pending_gen;
+    snap->camio_gen   = camio_sync_change_gen();
+    pthread_mutex_unlock(&g_lock);
+    return flags;
 }
 
 uint32_t config_wait_dirty(void)

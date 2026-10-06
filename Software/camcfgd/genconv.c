@@ -7,6 +7,7 @@
  */
 
 #include <math.h>
+#include <pthread.h>
 #include <string.h>
 #include <arpa/inet.h>
 
@@ -114,29 +115,43 @@ static uint32_t read_be_u32(const uint8_t *p)
 
 static uint32_t g_wb_ratio_sel = 0;
 
-static struct camio_cfg g_camio_acc;
-static uint32_t         g_camio_line_sel;
+static uint32_t g_camio_line_sel;
 
-static void camio_push(void)
+static pthread_mutex_t g_gc_lock = PTHREAD_MUTEX_INITIALIZER;
+
+#define CAMIO_PUT(fb, field, val) do {                     \
+        struct camio_cfg u_;                               \
+        memset(&u_, 0, sizeof(u_));                        \
+        u_.field = (val);                                  \
+        config_update_camio(&u_, CAMIO_F(fb));             \
+    } while (0)
+
+static uint8_t  sat8(uint32_t v)  { return v > 0xFFu   ? 0xFFu   : (uint8_t)v; }
+static uint16_t sat16(uint32_t v) { return v > 0xFFFFu ? 0xFFFFu : (uint16_t)v; }
+
+static uint32_t camio_f64_units(const uint8_t *value, double per_us)
 {
-    g_camio_acc.present = 1;
-    config_set_camio(&g_camio_acc);
+    double x = read_be_f64(value) * per_us + 0.5;
+    return isfinite(x) && x >= 0.0 && x < 4294967295.0 ? (uint32_t)x : 0xFFFFFFFFu;
 }
 
-#define CAMIO_DIVIDER_MAX  0xFFu
-#define CAMIO_US_CEIL      (CHC5CAMIO_TIME_MAX_UNITS * CHC5CAMIO_TICK_US)
+static uint64_t g_sfr_period_ps;
+static uint64_t g_sfr_start;
+static int      g_sfr_period_set, g_sfr_start_set;
 
-static int camio_enum_ok(const char *name, uint32_t v, uint32_t max)
+static void sfr_commit(int enable)
 {
-    if (v <= max) return 1;
-    LOG_WARN("camio: %s=%u out of range (max %u) -- write ignored", name, v, max);
-    return 0;
-}
+    struct camio_cfg u;
+    uint32_t m = enable >= 0 ? CAMIO_F(SCHED_ENABLE) : 0;
 
-static uint32_t camio_us_clamp(double us)
-{
-    if (us > (double)CAMIO_US_CEIL) return CAMIO_US_CEIL;
-    return (uint32_t)(us + 0.5);
+    memset(&u, 0, sizeof(u));
+    u.sched_enable    = (uint8_t)enable;
+    u.sched_period_ps = g_sfr_period_ps;
+    u.sched_start_ns  = g_sfr_start;
+    if (g_sfr_period_set) m |= CAMIO_F(SCHED_PERIOD);
+    if (g_sfr_start_set)  m |= CAMIO_F(SCHED_START);
+    config_update_camio(&u, m);
+    g_sfr_period_set = g_sfr_start_set = 0;
 }
 
 static int genconv_camio(uint32_t addr, const uint8_t *value, int len)
@@ -145,93 +160,189 @@ static int genconv_camio(uint32_t addr, const uint8_t *value, int len)
 
     switch (addr) {
     case GIGE_REG_LINE_SELECTOR:
-        if (len >= 4) g_camio_line_sel = read_be_u32(value);
+        if (len >= 4) {
+            v = read_be_u32(value);
+            if (v <= 1u)
+                g_camio_line_sel = v;
+            else
+                LOG_WARN("camio: LineSelector=%u -- ignored", v);
+        }
         return 0;
     case GIGE_REG_LINE_INVERTER:
         if (len >= 4) {
-            if (g_camio_line_sel == 1) g_camio_acc.out_invert = read_be_u32(value) ? 1 : 0;
-            else                       g_camio_acc.in_invert  = read_be_u32(value) ? 1 : 0;
-            camio_push();
+            if (g_camio_line_sel == 1) CAMIO_PUT(OUT_INVERT, out_invert, read_be_u32(value) ? 1 : 0);
+            else                       CAMIO_PUT(IN_INVERT,  in_invert,  read_be_u32(value) ? 1 : 0);
         }
         return 0;
     case GIGE_REG_LINE_SOURCE:
-        if (len >= 4 && camio_enum_ok("LineSource", v = read_be_u32(value),
-                                      camio_sync_has_ptp_pulse() == 1
-                                          ? CHC5CAMIO_OUT_PTP_PULSE
-                                          : CHC5CAMIO_OUT_PASSTHROUGH)) {
-            g_camio_acc.out_source = (uint8_t)v; camio_push();
-        }
+        if (len >= 4 && g_camio_line_sel == 1)
+            CAMIO_PUT(OUT_SOURCE, out_source, sat8(read_be_u32(value)));
         return 0;
     case GIGE_REG_USER_OUTPUT_VALUE:
-        if (len >= 4) { g_camio_acc.out_user_value = read_be_u32(value) ? 1 : 0; camio_push(); }
+        if (len >= 4 && g_camio_line_sel == 1)
+            CAMIO_PUT(OUT_USER, out_user_value, read_be_u32(value) ? 1 : 0);
         return 0;
     case GIGE_REG_TRIGGER_MODE:
-        if (len >= 4) {
-            g_camio_acc.in_function = read_be_u32(value) ? CHC5CAMIO_IN_TRIGGER
-                                                         : CHC5CAMIO_IN_OFF;
-            camio_push();
-        }
+        if (len >= 4)
+            CAMIO_PUT(IN_FUNCTION, in_function,
+                      read_be_u32(value) ? CHC5CAMIO_IN_TRIGGER : CHC5CAMIO_IN_OFF);
         return 0;
     case GIGE_REG_TRIGGER_SOURCE:
-        if (len >= 4 && read_be_u32(value) == 1) {
-            g_camio_acc.in_function = CHC5CAMIO_IN_TRIGGER;
-            camio_push();
+        if (len >= 4) {
+            v = read_be_u32(value);
+            CAMIO_PUT(TRIG_SRC, trig_src,
+                      v == GENICAM_TRIGSRC_LINE0    ? CHC5CAMIO_TRIG_SRC_LINE0    :
+                      v == GENICAM_TRIGSRC_SOFTWARE ? CHC5CAMIO_TRIG_SRC_SOFTWARE :
+                      v == GENICAM_TRIGSRC_ACTION1  ? CHC5CAMIO_TRIG_SRC_ACTION   :
+                                                      0xFFu);
         }
+        return 0;
+    case GIGE_REG_SFR_ENABLE:
+        if (len >= 4) sfr_commit(read_be_u32(value) ? 1 : 0);
+        return 0;
+    case GIGE_REG_SFR_START_LOW:
+        if (len >= 4) {
+            g_sfr_start = (g_sfr_start & 0xFFFFFFFF00000000ull) | read_be_u32(value);
+            g_sfr_start_set = 1;
+        }
+        return 0;
+    case GIGE_REG_SFR_START_HIGH:
+        if (len >= 4) {
+            g_sfr_start = (g_sfr_start & 0xFFFFFFFFull) | (uint64_t)read_be_u32(value) << 32;
+            g_sfr_start_set = 1;
+        }
+        return 0;
+    case GIGE_REG_SFR_RATE:
+        if (len >= 8) {
+            double hz = read_be_f64(value);
+            if (isfinite(hz) && hz > 0.0 && 1e12 / hz < 1.8e19) {
+                g_sfr_period_ps = (uint64_t)(1e12 / hz + 0.5);
+                g_sfr_period_set = 1;
+            } else
+                LOG_WARN("camio: SyncFreeRunTimerTriggerRateAbs=%g out of range -- ignored", hz);
+        }
+        return 0;
+    case GIGE_REG_SFR_UPDATE:
+        if (len >= 4 && read_be_u32(value)) sfr_commit(-1);
+        return 0;
+    case GIGE_REG_LINE_DEBOUNCER:
+        if (len >= 8)
+            CAMIO_PUT(IN_FILTER, in_filter_ns, camio_f64_units(value, 1000.0));
         return 0;
     case GIGE_REG_TRIGGER_ACTIVATION:
-        if (len >= 4 && camio_enum_ok("TriggerActivation", v = read_be_u32(value),
-                                      CHC5CAMIO_ACT_LEVEL)) {
-            g_camio_acc.in_activation = (uint8_t)v; camio_push();
-        }
+        if (len >= 4)
+            CAMIO_PUT(IN_ACTIVATION, in_activation, sat8(read_be_u32(value)));
         return 0;
     case GIGE_REG_TRIGGER_DELAY:
-        if (len >= 8) {
-            double us = read_be_f64(value);
-            if (isfinite(us) && us >= 0.0) { g_camio_acc.trigger_delay_us = camio_us_clamp(us); camio_push(); }
-        }
+        if (len >= 8)
+            CAMIO_PUT(TRIG_DELAY, trigger_delay_ns, camio_f64_units(value, 1000.0));
         return 0;
     case GIGE_REG_TRIGGER_DIVIDER:
-        if (len >= 4 && camio_enum_ok("TriggerDivider", v = read_be_u32(value),
-                                      CAMIO_DIVIDER_MAX)) {
-            g_camio_acc.trigger_divider = (uint16_t)v; camio_push();
-        }
+        if (len >= 4)
+            CAMIO_PUT(TRIG_DIVIDER, trigger_divider, sat16(read_be_u32(value)));
         return 0;
     case GIGE_REG_STROBE_ENABLE:
-        if (len >= 4) { g_camio_acc.strobe_enable = read_be_u32(value) ? 1 : 0; camio_push(); }
+        if (len >= 4) CAMIO_PUT(STROBE_ENABLE, strobe_enable, read_be_u32(value) ? 1 : 0);
         return 0;
     case GIGE_REG_STROBE_SOURCE:
-        if (len >= 4 && camio_enum_ok("StrobeSource", v = read_be_u32(value),
-                                      CHC5CAMIO_STRB_SRC_NATIVE)) {
-            g_camio_acc.strobe_src = (uint8_t)v; camio_push();
-        }
+        if (len >= 4)
+            CAMIO_PUT(STROBE_SRC, strobe_src, sat8(read_be_u32(value)));
         return 0;
     case GIGE_REG_STROBE_DELAY:
-        if (len >= 8) {
-            double us = read_be_f64(value);
-            if (isfinite(us) && us >= 0.0) { g_camio_acc.strobe_delay_us = camio_us_clamp(us); camio_push(); }
-        }
+        if (len >= 8)
+            CAMIO_PUT(STROBE_DELAY, strobe_delay_us, camio_f64_units(value, 1.0));
         return 0;
     case GIGE_REG_STROBE_DURATION:
-        if (len >= 8) {
-            double us = read_be_f64(value);
-            if (isfinite(us) && us >= 0.0) { g_camio_acc.strobe_duration_us = camio_us_clamp(us); camio_push(); }
-        }
+        if (len >= 8)
+            CAMIO_PUT(STROBE_DUR, strobe_duration_us, camio_f64_units(value, 1.0));
         return 0;
     case GIGE_REG_STROBE_MINON:
-        if (len >= 8) {
-            double us = read_be_f64(value);
-            if (isfinite(us) && us >= 0.0) { g_camio_acc.strobe_minon_us = camio_us_clamp(us); camio_push(); }
-        }
+        if (len >= 8)
+            CAMIO_PUT(STROBE_MINON, strobe_minon_us, camio_f64_units(value, 1.0));
         return 0;
     case GIGE_REG_SYNC_ROLE:
-        if (len >= 4 && camio_enum_ok("SyncRole", v = read_be_u32(value),
-                                      CHC5CAMIO_ROLE_SLAVE)) {
-            g_camio_acc.sync_role = (uint8_t)v; camio_push();
-        }
+        if (len >= 4)
+            CAMIO_PUT(SYNC_ROLE, sync_role, sat8(read_be_u32(value)));
         return 0;
     default:
         return 0;
     }
+}
+
+static void put_be32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);  p[3] = (uint8_t)v;
+}
+
+static void put_be_f64(uint8_t *p, double d)
+{
+    uint64_t u;
+    memcpy(&u, &d, 8);
+    put_be32(p, (uint32_t)(u >> 32));
+    put_be32(p + 4, (uint32_t)u);
+}
+
+static void genconv_render_camio_locked(struct camcfgd_camio_regs *out);
+
+void genconv_render_camio(struct camcfgd_camio_regs *out)
+{
+    pthread_mutex_lock(&g_gc_lock);
+    genconv_render_camio_locked(out);
+    pthread_mutex_unlock(&g_gc_lock);
+}
+
+static void genconv_render_camio_locked(struct camcfgd_camio_regs *out)
+{
+    struct camio_cfg c;
+    uint32_t levels = 0, sched_st = 0, sync_st = 0;
+    uint8_t *r = out->regs;
+    uint32_t sel = g_camio_line_sel & 1u;
+#define REG(a) (r + ((a) - CHC5_CAMIO_REG_BASE))
+
+    config_get_camio(&c);
+    (void)camio_sync_line_levels(&levels);
+    (void)camio_sync_sched_status(&sched_st);
+    (void)camio_sync_read_status(NULL, NULL, &sync_st);
+    memset(out, 0, sizeof(*out));
+
+    put_be32(REG(GIGE_REG_LINE_SELECTOR),     sel);
+    put_be32(REG(GIGE_REG_LINE_MODE),         sel);
+    put_be32(REG(GIGE_REG_LINE_INVERTER),     sel ? c.out_invert : c.in_invert);
+    put_be32(REG(GIGE_REG_LINE_STATUS),       (levels >> sel) & 1u);
+    put_be32(REG(GIGE_REG_LINE_STATUS_ALL),   levels & 3u);
+    put_be32(REG(GIGE_REG_LINE_SOURCE),       sel ? c.out_source : 0u);
+    put_be32(REG(GIGE_REG_USER_OUTPUT_VALUE), sel ? c.out_user_value : 0u);
+    put_be32(REG(GIGE_REG_TRIGGER_MODE),      c.in_function == CHC5CAMIO_IN_TRIGGER);
+    put_be32(REG(GIGE_REG_TRIGGER_SOURCE),
+             c.trig_src == CHC5CAMIO_TRIG_SRC_SOFTWARE ? GENICAM_TRIGSRC_SOFTWARE :
+             c.trig_src == CHC5CAMIO_TRIG_SRC_ACTION   ? GENICAM_TRIGSRC_ACTION1  :
+                                                         GENICAM_TRIGSRC_LINE0);
+    put_be32(REG(GIGE_REG_TRIGGER_ACTIVATION), c.in_activation);
+    put_be32(REG(GIGE_REG_TRIGGER_DIVIDER),   c.trigger_divider ? c.trigger_divider : 1u);
+    put_be_f64(REG(GIGE_REG_TRIGGER_DELAY),   c.trigger_delay_ns / 1000.0);
+    put_be32(REG(GIGE_REG_STROBE_ENABLE),     c.strobe_enable);
+    put_be32(REG(GIGE_REG_STROBE_SOURCE),     c.strobe_src);
+    put_be_f64(REG(GIGE_REG_STROBE_DELAY),    c.strobe_delay_us);
+    put_be_f64(REG(GIGE_REG_STROBE_DURATION), c.strobe_duration_us);
+    put_be_f64(REG(GIGE_REG_STROBE_MINON),    c.strobe_minon_us);
+    put_be32(REG(GIGE_REG_SYNC_ROLE),         c.sync_role);
+    put_be32(REG(GIGE_REG_SYNC_STATUS),       sync_st & CHC5CAMIO_SYNC_STATUS_BITS);
+    put_be32(REG(GIGE_REG_SFR_ENABLE),        c.sched_enable);
+    {
+        uint64_t st = g_sfr_start_set ? g_sfr_start : c.sched_start_ns;
+        uint64_t ps = g_sfr_period_set ? g_sfr_period_ps
+                    : c.sched_period_ps ? c.sched_period_ps
+                    : chc5camio_mhz_to_ps(CHC5_SYNC_RATE_DEFAULT_MHZ);
+        put_be32(REG(GIGE_REG_SFR_START_LOW),  (uint32_t)st);
+        put_be32(REG(GIGE_REG_SFR_START_HIGH), (uint32_t)(st >> 32));
+        put_be_f64(REG(GIGE_REG_SFR_RATE),     1e12 / (double)ps);
+    }
+    put_be32(REG(GIGE_REG_SFR_STATUS),        sched_st);
+    put_be_f64(REG(GIGE_REG_LINE_DEBOUNCER),  c.in_filter_ns / 1000.0);
+    put_be32(REG(GIGE_REG_IO_CAPS),           camio_sync_io_caps());
+    out->exposure_mode = c.width_mode ? GENICAM_EXPMODE_TRIGGER_WIDTH : GENICAM_EXPMODE_TIMED;
+#undef REG
 }
 
 static uint8_t  g_gige_gamma_en   = 1;
@@ -245,7 +356,19 @@ static void gige_gamma_apply(void)
                                                    g_gige_gamma_x100);
 }
 
+static int genconv_apply_register_locked(uint32_t addr, const uint8_t *value, int len);
+
 int genconv_apply_register(uint32_t addr, const uint8_t *value, int len)
+{
+    int r;
+
+    pthread_mutex_lock(&g_gc_lock);
+    r = genconv_apply_register_locked(addr, value, len);
+    pthread_mutex_unlock(&g_gc_lock);
+    return r;
+}
+
+static int genconv_apply_register_locked(uint32_t addr, const uint8_t *value, int len)
 {
     imgsensor_cfg_t cur;
 
@@ -255,6 +378,20 @@ int genconv_apply_register(uint32_t addr, const uint8_t *value, int len)
     config_get_sensor(&cur);
 
     switch (addr) {
+
+    case GIGE_REG_TRIGGER_SOFTWARE:
+        if (len >= 4 && read_be_u32(value) &&
+            camio_sync_fire(CHC5_TRIGEV_SOFTWARE) != 0)
+            LOG_WARN("camio: TriggerSoftware needs TriggerMode=On, TriggerSource=Software -- ignored");
+        return 0;
+    case GIGE_REG_EXPOSURE_MODE:
+        if (len >= 4) {
+            uint32_t v = read_be_u32(value);
+            CAMIO_PUT(WIDTH_MODE, width_mode,
+                      v == GENICAM_EXPMODE_TIMED         ? 0 :
+                      v == GENICAM_EXPMODE_TRIGGER_WIDTH ? 1 : 0xFFu);
+        }
+        return 0;
 
     case GIGE_REG_WIDTH:
         if (len >= 4) {
@@ -423,6 +560,20 @@ int genconv_apply_register(uint32_t addr, const uint8_t *value, int len)
         }
         return 0;
 
+    case GIGE_REG_AE_GAIN_LOWER:
+    case GIGE_REG_AE_GAIN_UPPER:
+        if (len >= 4) {
+            uint32_t v = read_be_u32(value);
+            if (v > CFG_AE_GAIN_UNSET - 1u) v = CFG_AE_GAIN_UNSET - 1u;
+            if (addr == GIGE_REG_AE_GAIN_LOWER)
+                config_set_ae_gain_lower_db10((uint16_t)v);
+            else
+                config_set_ae_gain_upper_db10((uint16_t)v);
+            LOG_INFO("genconv: AutoGain%sLimit %.1f dB",
+                     addr == GIGE_REG_AE_GAIN_LOWER ? "Lower" : "Upper", v / 10.0);
+        }
+        return 0;
+
     case GIGE_REG_BALANCE_WHITE_AUTO:
         if (len >= 4) {
             uint32_t v = read_be_u32(value);
@@ -542,22 +693,20 @@ int genconv_apply_register(uint32_t addr, const uint8_t *value, int len)
         }
         return 0;
 
-    case GIGE_REG_FPS_ENABLE:
-        if (len >= 4) {
-            uint32_t v = read_be_u32(value);
-            LOG_INFO("genconv: AcqFrameRateEnable -> %u", v);
-        }
-        return 0;
-
     case GIGE_REG_FPS:
         if (len >= 8) {
             double fps_hz = read_be_f64(value);
             if (!isfinite(fps_hz)) { LOG_WARN("genconv: AcquisitionFrameRate not finite, ignored"); return 0; }
+            if (fps_hz <= 0.0) {
+                config_set_fps_f(0.0f);
+                LOG_INFO("genconv: AcquisitionFrameRateEnable off -> no frame rate limit");
+                return 0;
+            }
             if (fps_hz < 0.1) fps_hz = 0.1;
             if (fps_hz > 10000.0) fps_hz = 10000.0;
 
             config_set_fps_f((float)fps_hz);
-            LOG_INFO("genconv: AcquisitionFrameRate %.1f Hz -> %.1f", fps_hz, fps_hz);
+            LOG_INFO("genconv: AcquisitionFrameRate %.3f Hz", fps_hz);
         }
         return 0;
 

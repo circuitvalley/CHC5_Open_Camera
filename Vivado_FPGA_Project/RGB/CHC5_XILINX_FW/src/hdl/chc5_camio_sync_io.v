@@ -55,11 +55,15 @@ module chc5_camio_sync_io #(
 );
     wire xvs_i, xvs_o, xvs_t;
     wire xhs_i, xhs_o, xhs_t;
+    wire xmaster_o, xmaster_t, xtrig1_o, xtrig1_t;
     wire ptp_evt_o, ptp_evt_t;
 
     IOBUF xvs_iobuf (.I(xvs_o), .O(xvs_i), .T(xvs_t), .IO(xvs));
     IOBUF xhs_iobuf (.I(xhs_o), .O(xhs_i), .T(xhs_t), .IO(xhs));
     OBUFT ptp_evt_obuft (.I(ptp_evt_o), .T(ptp_evt_t), .O(ptp_evt));
+    OBUFT xmaster_obuft (.I(xmaster_o), .T(xmaster_t), .O(xmaster));
+    OBUFT xtrig1_obuft  (.I(xtrig1_o),  .T(xtrig1_t),  .O(xtrig1));
+    OBUFT xtrig2_obuft  (.I(1'b0),      .T(1'b1),      .O(xtrig2));
 
     chc5_camio_sync #(
         .CLK_HZ(CLK_HZ), .DELAY_W(DELAY_W), .TB_W(TB_W), .DIV_W(DIV_W), .LOCK_W(LOCK_W)
@@ -73,7 +77,7 @@ module chc5_camio_sync_io #(
         .opto_in(opto_in), .opto_out(opto_out),
         .xvs_i(xvs_i), .xvs_o(xvs_o), .xvs_t(xvs_t),
         .xhs_i(xhs_i), .xhs_o(xhs_o), .xhs_t(xhs_t),
-        .xmaster(xmaster), .xtrig1(xtrig1), .xtrig2(xtrig2),
+        .xmaster(xmaster_o), .xmaster_t(xmaster_t), .xtrig1(xtrig1_o), .xtrig1_t(xtrig1_t),
         .native_strobe_in(native_strobe_in),
         .ptp_evt_o(ptp_evt_o), .ptp_evt_t(ptp_evt_t));
 

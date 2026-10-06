@@ -25,4 +25,8 @@ int camcfgd_stream_ctrl(int enable);
 
 int camcfgd_get_config(struct camcfg_state_s *out);
 
+int camcfgd_trigger_event(uint8_t ev);
+
+int camcfgd_get_camio_regs(struct camcfgd_camio_regs *out);
+
 #endif

@@ -280,5 +280,6 @@ config VIDEO_CHC5_CAMIO
 	tristate "CHC5 camera I/O and sync"
 	depends on VIDEO_DEV
 	depends on PTP_1588_CLOCK_OPTIONAL
+	depends on MACB || !MACB
 	help
 	  CHC5 camera I/O and sync.

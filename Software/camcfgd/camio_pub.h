@@ -15,6 +15,6 @@
 #define CAMIO_PUB_PATH   "/run/chc5_platformd/camio"
 #endif
 
-int camio_pub_poll(struct camio_cfg *out);
+int camio_pub_poll(struct camio_cfg *out, uint32_t *mask);
 
 #endif

@@ -12,11 +12,12 @@
 imx283: sensor@1a {
 	compatible = "sony,imx283";
 	reg = <0x1a>;
+	CHC5_CAM_RESET_XCLR
 	clocks = <&clk_24m>;
 	VANA-supply = <&imx283_vana>;
 	VDIG-supply = <&imx283_vdig>;
 	VDDL-supply = <&imx283_vddl>;
-	link-frequencies = <0x00 0x15752a00>;
+	link-frequencies = <CHC5_LINK_FREQ>;
 
 	port {
 		direction = "input";
@@ -24,7 +25,7 @@ imx283: sensor@1a {
 		sensor_out: endpoint {
 			remote-endpoint = <&csiss_in>;
 			data-lanes = <CHC5_DATA_LANES>;
-			link-frequencies = <0x00 0x15752a00>;
+			link-frequencies = <CHC5_LINK_FREQ>;
 		};
 	};
 };

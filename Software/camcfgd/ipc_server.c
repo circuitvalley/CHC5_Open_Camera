@@ -23,6 +23,7 @@
 #include "config.h"
 #include "genconv.h"
 #include "ipc_server.h"
+#include "camio_sync.h"
 
 #define MAX_CLIENTS          8
 #define ACCEPT_POLL_TIMEOUT  500
@@ -102,7 +103,7 @@ static const char *validate_sensor_cfg(const imgsensor_cfg_t *c)
 
     if ((c->binning >> 4) > 2 || (c->binning & 0x0F) > 2)
         return "bad binning";
-    if (c->test_pattern > 8)
+    if (c->test_pattern > CHC5_TPBIN_TP_MASK)
         return "bad test_pattern";
     if ((c->stream_enable & 0x0F) > 2 || (c->stream_enable & 0xE0))
         return "bad stream_enable";
@@ -134,7 +135,7 @@ static const char *validate_sensor_cfg(const imgsensor_cfg_t *c)
         return "offset_y + height overflow";
     if (c->exposure_us > EXPOSURE_US_MAX)
         return "exposure_us above sanity ceiling";
-    if (c->fps > 10000)
+    if (c->fps_mhz > 10000u * 1000u)
         return "fps above sanity ceiling";
 
     unsigned bpp = (c->pixel_format >> 16) & 0xFFu;
@@ -161,17 +162,17 @@ static void handle_set_sensor_cfg(int client_fd,
     const char *reject = validate_sensor_cfg(&cfg);
     if (reject) {
         LOG_WARN("ipc: SET_SENSOR_CFG rejected: %s "
-                 "(%ux%u+%u+%u pfnc=0x%08X fps=%u exp=%u gain=%u bin=0x%02X)",
+                 "(%ux%u+%u+%u pfnc=0x%08X fps=%.3f exp=%u gain=%u bin=0x%02X)",
                  reject, cfg.width, cfg.height, cfg.offset_x, cfg.offset_y,
-                 cfg.pixel_format, cfg.fps, cfg.exposure_us,
+                 cfg.pixel_format, cfg.fps_mhz / 1000.0, cfg.exposure_us,
                  cfg.analog_gain, cfg.binning);
         send_reply(client_fd, IPC_MSG_REPLY_ERR, reject, strlen(reject));
         return;
     }
 
-    LOG_INFO("ipc: SET_SENSOR_CFG %ux%u+%u+%u pfnc=0x%08X %ufps exp=%uus gain=%u bin=0x%02X",
+    LOG_INFO("ipc: SET_SENSOR_CFG %ux%u+%u+%u pfnc=0x%08X %.3ffps exp=%uus gain=%u bin=0x%02X",
              cfg.width, cfg.height, cfg.offset_x, cfg.offset_y,
-             cfg.pixel_format, cfg.fps,
+             cfg.pixel_format, cfg.fps_mhz / 1000.0,
              cfg.exposure_us, cfg.analog_gain, cfg.binning);
 
     config_set_sensor(&cfg, CFG_SRC_GIGE);
@@ -185,6 +186,26 @@ static void handle_get_config(int client_fd)
 
     send_reply(client_fd, IPC_MSG_REPLY_OK,
                &state, (uint16_t)sizeof(state));
+}
+
+static void handle_trigger_event(int client_fd, const uint8_t *payload, uint16_t len)
+{
+    if (len < 1) {
+        send_reply(client_fd, IPC_MSG_REPLY_ERR, "short payload", 13);
+        return;
+    }
+    if (camio_sync_fire(payload[0]) == 0)
+        send_reply(client_fd, IPC_MSG_REPLY_OK, NULL, 0);
+    else
+        send_reply(client_fd, IPC_MSG_REPLY_ERR, "not the trigger source", 22);
+}
+
+static void handle_get_camio_regs(int client_fd)
+{
+    struct camcfgd_camio_regs r;
+
+    genconv_render_camio(&r);
+    send_reply(client_fd, IPC_MSG_REPLY_OK, &r, (uint16_t)sizeof(r));
 }
 
 static void handle_set_genreg(int client_fd,
@@ -257,6 +278,12 @@ static int handle_client_message(int client_fd, uint64_t cid)
         break;
     case IPC_MSG_STREAM_CTRL:
         handle_stream_ctrl(client_fd, payload, payload_len, cid);
+        break;
+    case IPC_MSG_TRIGGER_EVENT:
+        handle_trigger_event(client_fd, payload, payload_len);
+        break;
+    case IPC_MSG_GET_CAMIO_REGS:
+        handle_get_camio_regs(client_fd);
         break;
     default:
         LOG_WARN("ipc: unknown msg type 0x%02X", msg_type);

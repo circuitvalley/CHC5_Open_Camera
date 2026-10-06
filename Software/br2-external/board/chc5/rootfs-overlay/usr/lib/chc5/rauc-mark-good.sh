@@ -18,6 +18,21 @@ all_active() {
 	return 0
 }
 
+sync_card_script() {
+	src=/usr/share/chc5/chc5sd.scr
+	dst=/boot/chc5sd.scr
+	case " $(cat /proc/cmdline) " in *" root=/dev/mmcblk0p"*) ;; *) return 0 ;; esac
+	[ -f "${src}" ] && mountpoint -q /boot || return 0
+	cmp -s "${src}" "${dst}" && return 0
+	if cp "${src}" /boot/chc5sd.new && sync && mv -f /boot/chc5sd.new "${dst}" && sync \
+	   && cmp -s "${src}" "${dst}"; then
+		echo "chc5-mark-good: the card's chc5sd.scr updated from this slot"
+	else
+		rm -f /boot/chc5sd.new
+		echo "chc5-mark-good: could NOT update the card's chc5sd.scr (old one kept)" >&2
+	fi
+}
+
 i=0
 while ! all_active; do
 	i=$((i + 1))
@@ -49,6 +64,7 @@ if rauc status mark-good; then
 		echo "chc5-mark-good: slot good but could NOT clear upgrade_available --" \
 		     "boot attempts will keep counting; check fw_setenv / fw_env.config" >&2
 	fi
+	sync_card_script
 else
 	rc=$?
 	echo "chc5-mark-good: 'rauc status mark-good' failed (rc=${rc})" >&2

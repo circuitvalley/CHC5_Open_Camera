@@ -2,13 +2,13 @@
   "manifest_kind": "sensor_v1",
   "manifest_version": 1,
   "manifest": {
-    "version": "1.4.0",
-    "description": "IMX585 mono, 4 lanes, 12-bit, Xilinx mono pipeline (ST31)",
+    "version": "1.15.1",
+    "description": "IMX678 4-lane 12-bit, Xilinx colour pipeline (no AE/AWB, no 3x3 CCM)",
     "vendor": "Sony",
-    "model": "IMX585"
+    "model": "IMX678"
   },
   "kernel": {
-    "module": "imx585",
+    "module": "imx678",
     "lanes": 4
   },
   "sensor": {
@@ -20,14 +20,14 @@
     "height_inc": 4,
     "offset_x_inc": 2,
     "offset_y_inc": 4,
-    "color_filter": "None",
+    "width_min": 1040,
+    "height_min": 956,
+    "color_filter": "BayerRG",
     "bit_depth": 12,
-    "chroma": "mono",
-    "width_min": 64,
-    "height_min": 240
+    "chroma": "color"
   },
   "exposure": {
-    "min_us": 30,
+    "min_us": 18,
     "max_us": 1000000
   },
   "gain": {
@@ -48,8 +48,10 @@
   "binning": {
     "max_h": 2,
     "max_v": 2,
-    "width_min": 64,
-    "height_min": 120
+    "width": 1920,
+    "height": 1080,
+    "width_min": 528,
+    "height_min": 480
   },
   "decimation": {
     "max_h": 1,
@@ -72,12 +74,16 @@
       "pfnc": 17301505
     },
     {
-      "name": "Mono12",
-      "pfnc": 17825797
+      "name": "BayerRG8",
+      "pfnc": 17301513
     },
     {
-      "name": "Mono12p",
-      "pfnc": 17563719
+      "name": "BayerRG12",
+      "pfnc": 17825809
+    },
+    {
+      "name": "BayerRG12p",
+      "pfnc": 17563737
     },
     {
       "name": "YUV422_8",
@@ -98,31 +104,31 @@
   ],
   "uvc_modes": [
     {
-      "w": 640,
-      "h": 480,
-      "fps": 60,
-      "src": "bin",
-      "binning": 17
-    },
-    {
-      "w": 1280,
-      "h": 720,
-      "fps": 40,
-      "src": "bin",
-      "binning": 17
-    },
-    {
       "w": 1920,
       "h": 1080,
-      "fps": 30,
+      "fps": 25,
       "src": "bin",
       "binning": 17
     },
     {
       "w": 3840,
       "h": 2160,
-      "fps": 21,
+      "fps": 18,
       "src": "full"
+    },
+    {
+      "w": 1280,
+      "h": 720,
+      "fps": 37,
+      "src": "bin",
+      "binning": 17
+    },
+    {
+      "w": 640,
+      "h": 480,
+      "fps": 54,
+      "src": "bin",
+      "binning": 17
     }
   ],
   "gamma": {
@@ -145,10 +151,55 @@
       "name": "AllAAAh"
     },
     {
+      "name": "Toggle555hAAAh"
+    },
+    {
+      "name": "ToggleAAAh555h"
+    },
+    {
+      "name": "Toggle000h555h"
+    },
+    {
+      "name": "Toggle555h000h"
+    },
+    {
+      "name": "Toggle000hFFFh"
+    },
+    {
+      "name": "ToggleFFFh000h"
+    },
+    {
       "name": "HorizontalColorBars"
     },
     {
       "name": "VerticalColorBars"
     }
-  ]
+  ],
+  "ccm": "6378 -1758 -524 0 -2400 8383 -1887 0 -210 -3074 7380 0",
+  "color_temp": {
+    "k3200": {
+      "r_x100": 128,
+      "b_x100": 235
+    },
+    "k4800": {
+      "r_x100": 164,
+      "b_x100": 185
+    },
+    "k5600": {
+      "r_x100": 180,
+      "b_x100": 171
+    },
+    "k6500": {
+      "r_x100": 194,
+      "b_x100": 159
+    }
+  },
+  "ccm_ct": {
+    "k3200": "5709 -446 -1167 0 -3969 9723 -1658 0 -728 -4913 9737 0",
+    "k4800": "6163 -1399 -668 0 -2812 8745 -1837 0 -279 -3449 7824 0",
+    "k5600": "6378 -1758 -524 0 -2400 8383 -1887 0 -210 -3074 7380 0",
+    "k6500": "6555 -2056 -403 0 -2059 8083 -1928 0 -152 -2763 7011 0"
+  },
+  "bayer_order": "RGGB",
+  "bayer_flip_moves": "none"
 }

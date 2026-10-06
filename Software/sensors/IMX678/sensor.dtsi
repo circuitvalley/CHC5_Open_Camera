@@ -12,6 +12,7 @@
 imx678: sensor@1a {
 	compatible = "sony,imx678";
 	reg = <0x1a>;
+	CHC5_CAM_RESET_XCLR
 	sony,hcg-level = <0x1a>;
 	clocks = <&clk_37m125>;
 	VANA-supply = <&imx678_vana>;

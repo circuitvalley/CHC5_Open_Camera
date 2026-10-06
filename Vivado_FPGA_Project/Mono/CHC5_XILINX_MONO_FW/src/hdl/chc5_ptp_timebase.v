@@ -12,7 +12,8 @@ module chc5_ptp_timebase #(
     parameter integer GUARD_NS = 1000,
     parameter integer EVT_MINW = 4,
     parameter integer EVT_MINP = 1000,
-    parameter integer SETTLE   = 4
+    parameter integer SETTLE   = 4,
+    parameter integer LINE_MIN = 270
 )(
     input  wire        clk,
     input  wire        rstn,
@@ -41,8 +42,12 @@ module chc5_ptp_timebase #(
     input  wire        cap_pop,
 
     output reg         sched_fire,
-    output reg         line_tick,
     output wire        ptp_active,
+    output wire [23:0] ln_period,
+    output wire [23:0] ln_period_eff,
+    output wire [23:0] ln_count,
+    output wire [27:0] step12,
+    output wire        ln_more,
     input  wire        cap_evt,
     output reg         evt_fire,
 
@@ -75,25 +80,19 @@ module chc5_ptp_timebase #(
 
     reg  [31:0] frac;   reg c_frac;
     reg  [31:0] t_lo, t_hi, t_hi1;  reg c_tlo;
-    reg  [31:0] e_lo, e_hi, e_hi1;  reg c_elo;
     reg         never_disc;
 
     wire [32:0] frac_sum = {1'b0, frac} + {1'b0, step_frac};
     wire [32:0] tlo_sum  = {1'b0, t_lo} + {17'd0, step_ns} + {32'd0, c_frac};
-    wire [32:0] elo_sum  = {1'b0, e_lo} + {17'd0, step_ns} + {32'd0, c_frac};
 
     always @(posedge clk) begin
         if (!rstn) begin
             frac <= 32'd0; c_frac <= 1'b0;
             t_lo <= 32'd0; t_hi <= 32'd0; t_hi1 <= 32'd1; c_tlo <= 1'b0;
-            e_lo <= 32'd0; e_hi <= 32'd0; e_hi1 <= 32'd1; c_elo <= 1'b0;
             never_disc <= 1'b1;
         end else begin
             if (tb_en) begin
                 frac  <= frac_sum[31:0];  c_frac <= frac_sum[32];
-                e_lo  <= elo_sum[31:0];   c_elo  <= elo_sum[32];
-                e_hi  <= e_hi + c_elo;
-                e_hi1 <= c_elo ? e_hi + 32'd2 : e_hi + 32'd1;
             end
             if (load_q) begin
                 t_lo <= load_val_q[31:0]; t_hi <= load_val_q[63:32]; t_hi1 <= load_val_q[63:32] + 32'd1;
@@ -107,10 +106,7 @@ module chc5_ptp_timebase #(
     end
 
     assign time_now = {(c_tlo ? t_hi1 : t_hi), t_lo};
-    wire [63:0] el_now = {(c_elo ? e_hi1 : e_hi), e_lo};
-
-    reg [63:0] offs;
-    always @(posedge clk) offs <= time_now - el_now;
+    assign step12   = step[47:20] + {27'd0, |step[19:0]};
 
     reg  [63:0] ev_next, ev_d;
     reg         ev_armed, ev_pulse, ev_refused;
@@ -171,115 +167,86 @@ module chc5_ptp_timebase #(
     assign ptp_evt_t = ~ev_pulse;
     assign evt_count = ev_cnt;
 
-    reg  [63:0] p_ns;   reg [31:0] p_fr;   reg [23:0] l_ns;   reg [23:0] n_act;
-    reg  [63:0] pp_ns;  reg [31:0] pp_fr;  reg [23:0] pl_ns;  reg [23:0] pn;
+    localparam integer NS_W = 48;
+    localparam integer RW   = NS_W + 1 + 32;
+    localparam [RW-1:0] ONE_LSB = {{(RW-1){1'b0}}, 1'b1};
+    wire [RW-1:0] step_r = {{(RW-48){1'b0}}, step};
 
-    reg  [95:0] tf;
-    reg  [63:0] tmin, tl;
-    reg  [2:0]  st;
-    reg  [23:0] j;
-    reg         use_rem;
-    reg         tgt_ok;
-    reg         late;
-    reg  [2:0]  settle;
-    reg  [2:0]  settle_l;
+    reg  [RW-1:0] rem;
+    reg  [RW-1:0] p_fx, pp_fx;
+    reg  [23:0]   l_ns, n_act, pl_ns, pn;
+    reg  [23:0]   l_eff_ns, pl_eff_ns;
+    reg  [2:0]    st;
+    reg           tgt_ok;
+    reg           late;
 
-    wire [95:0] p96  = {p_ns, p_fr};
-    wire [95:0] pp96 = {pp_ns, pp_fr};
-    wire [63:0] tf_ns = tf[95:32];
-    wire [23:0] n_last = (n_act < 24'd2) ? 24'd1 : n_act - 1'b1;
-
-    reg  [63:0] tl_l;
-    reg         tf_ge_tl;
-    reg  [23:0] n_last_r;
-    reg         ge_f, ge_l, rem_ok, j_last;
-    always @(posedge clk) begin
-        tl_l     <= tl + l_ns;
-        tf_ge_tl <= (tf_ns >= tl);
-        ge_f     <= (el_now > tf_ns);
-        ge_l     <= (el_now > tl);
-        rem_ok   <= (tf_ns >= tl_l);
-        n_last_r <= n_last;
-        j_last   <= (j >= n_last_r);
-    end
-
-    wire        land  = (st == S_REANC);
-    wire [95:0] tf_nx = tf + (land ? pp96 : p96);
-    wire [63:0] tl_fr = ((st == S_WAIT || tf_ge_tl) ? tf_ns : tl) + (land ? pl_ns : l_ns);
-
-    wire running   = (st == S_RUN) || (st == S_REANC) || (st == S_STOP);
-    wire can_f     = (settle   == 3'd0);
-    wire can_l     = (settle_l == 3'd0);
-    wire last_line = use_rem ? ~rem_ok : j_last;
-    wire ev_start  = can_f && (st == S_WAIT) && tgt_ok && ge_f;
-    wire ev_frame  = can_f && can_l && running && ge_f && ge_l && last_line;
-    wire ev_line   = can_l && running && ge_l && !last_line && !ev_frame;
-
-    reg  [1:0]  cm;
-    reg         cm_evt;
-    reg         cm_req;
-    reg  [1:0]  ld_settle;
-    reg  [63:0] sn_el, el_g;
-    reg         commit_q;
-    always @(posedge clk) commit_q <= rstn & commit_pulse;
-    wire        set_ok   = (line_period != 24'd0);
-    wire        ld_busy  = load_pulse | load_q | (ld_settle != 2'd0);
-    wire        cm_start = (cm == 2'd0) && cm_req && !ld_busy;
-    assign commit_busy = commit_pulse | commit_q | cm_req | (cm != 2'd0);
-    reg         chk_fut, chk_long;
-    always @(posedge clk) begin
-        el_g     <= el_now + GUARD_NS;
-        chk_fut  <= (sn_el >= el_g);
-        chk_long <= (sn_el >= tmin);
-    end
+    wire running  = (st == S_RUN) || (st == S_REANC) || (st == S_STOP);
+    wire counting = running || tgt_ok;
+    wire due      = rem[RW-1];
+    wire ev_start = (st == S_WAIT) && tgt_ok && due;
+    wire ev_frame = running && due;
     wire frame_evt = ev_start || ev_frame;
+    wire [RW-1:0] p_add = (st == S_REANC) ? pp_fx : p_fx;
+
+    reg  [RW-1:0] p_add_r;
+    always @(posedge clk) p_add_r <= p_add;
+    (* keep = "true" *) wire [RW-1:0] rem_tick = rem - step_r;
+    (* keep = "true" *) wire [RW-1:0] rem_frm  = rem - step_r + p_add_r;
+    wire add_p = frame_evt && !(st == S_STOP);
+
+    reg  [1:0]    cm;
+    reg           cm_evt, cm_req, commit_q;
+    reg  [1:0]    ld_settle;
+    reg  [RW-1:0] d;
+    reg           rng_ok, chk_fut, chk_long, set_ok, p_lt;
+    always @(posedge clk) commit_q <= rstn & commit_pulse;
+    wire          ld_busy  = load_pulse | load_q | (ld_settle != 2'd0);
+    wire          cm_start = (cm == 2'd0) && cm_req && !ld_busy;
+    assign commit_busy = commit_pulse | commit_q | cm_req | (cm != 2'd0);
+
+    wire [63:0]   diff64  = sched_next - time_now - {63'd0, c_frac};
+    wire [23:0]   l_floor = (line_period < LINE_MIN[23:0]) ? LINE_MIN[23:0] : line_period;
+    wire [RW-1:0] two_l   = {{(RW-57){1'b0}}, l_floor, 1'b0, 32'd0};
+    wire [RW-1:0] p_in    = {1'b0, sched_period[NS_W-1:0], sched_period_frac};
+    wire [RW-1:0] p_new   = p_lt ? two_l : p_in;
+    wire [RW-1:0] d_m     = d - step_r;
 
     always @(posedge clk) begin
         if (!rstn || !tb_en) begin
-            st <= S_IDLE; j <= 24'd0; use_rem <= 1'b0; tgt_ok <= 1'b0; settle <= 3'd0; settle_l <= 3'd0;
-            tf <= 96'd0; tl <= 64'd0; tmin <= 64'd0;
-            sched_fire <= 1'b0; line_tick <= 1'b0; cm <= 2'd0; cm_evt <= 1'b0; sn_el <= 64'd0;
-            cm_req <= 1'b0; ld_settle <= 2'd0;
+            st <= S_IDLE; tgt_ok <= 1'b0; rem <= {RW{1'b0}};
+            sched_fire <= 1'b0; cm <= 2'd0; cm_evt <= 1'b0; cm_req <= 1'b0; ld_settle <= 2'd0;
+            d <= {RW{1'b0}}; rng_ok <= 1'b0; chk_fut <= 1'b0; chk_long <= 1'b0; set_ok <= 1'b0; p_lt <= 1'b0;
             if (!rstn) begin
                 late <= 1'b0;
-                p_ns <= 64'd0; p_fr <= 32'd0; l_ns <= 24'd0; n_act <= 24'd0;
-                pp_ns <= 64'd0; pp_fr <= 32'd0; pl_ns <= 24'd0; pn <= 24'd0;
+                p_fx <= {RW{1'b0}}; l_ns <= 24'd0; n_act <= 24'd0;
+                pp_fx <= {RW{1'b0}}; pl_ns <= 24'd0; pn <= 24'd0;
+                l_eff_ns <= LINE_MIN[23:0]; pl_eff_ns <= LINE_MIN[23:0];
             end else if (commit_q) begin
                 late <= 1'b1;
             end
         end else begin
-            sched_fire <= 1'b0; line_tick <= 1'b0;
-            if (settle   != 0) settle   <= settle   - 1'b1;
-            if (settle_l != 0) settle_l <= settle_l - 1'b1;
-            if (load_q)                ld_settle <= 2'd3;
-            else if (ld_settle != 0)   ld_settle <= ld_settle - 1'b1;
+            sched_fire <= 1'b0;
+            if (load_q)              ld_settle <= 2'd3;
+            else if (ld_settle != 0) ld_settle <= ld_settle - 1'b1;
             cm_req <= commit_q | (cm_req & ~cm_start);
 
+            if (counting) rem <= add_p ? rem_frm : rem_tick;
             if (ev_start) begin
-                sched_fire <= 1'b1; line_tick <= 1'b1;
-                tf <= tf_nx; tl <= tl_fr; tmin <= tf_nx[95:32];
-                j <= 24'd0; use_rem <= 1'b0; st <= S_RUN; settle <= SETTLE[2:0]; settle_l <= SETTLE[2:0];
+                sched_fire <= 1'b1; st <= S_RUN;
             end else if (ev_frame) begin
                 if (st == S_STOP) begin
-                    st <= S_IDLE; tgt_ok <= 1'b0; use_rem <= 1'b0; j <= 24'd0;
+                    st <= S_IDLE; tgt_ok <= 1'b0;
                 end else if (st == S_REANC) begin
-                    sched_fire <= 1'b1; line_tick <= 1'b1;
-                    p_ns <= pp_ns; p_fr <= pp_fr; l_ns <= pl_ns; n_act <= pn;
-                    tf <= tf_nx; tl <= tl_fr; tmin <= tf_nx[95:32];
-                    j <= 24'd0; use_rem <= 1'b0; st <= S_RUN;
+                    sched_fire <= 1'b1; st <= S_RUN;
+                    p_fx <= pp_fx; l_ns <= pl_ns; n_act <= pn; l_eff_ns <= pl_eff_ns;
                 end else begin
-                    sched_fire <= 1'b1; line_tick <= 1'b1;
-                    tf <= tf_nx; tl <= tl_fr; tmin <= tf_nx[95:32];
-                    j <= 24'd0;
+                    sched_fire <= 1'b1;
                 end
-                settle <= SETTLE[2:0]; settle_l <= SETTLE[2:0];
-            end else if (ev_line) begin
-                line_tick <= 1'b1; j <= j + 1'b1; tl <= tl_l; settle <= SETTLE[2:0]; settle_l <= SETTLE[2:0];
             end else begin
                 case (st)
                     S_IDLE: begin
                         if (sched_en) st <= S_WAIT;
-                        else if (tgt_ok && ge_f && can_f) begin
+                        else if (tgt_ok && due) begin
                             tgt_ok <= 1'b0; late <= 1'b1;
                         end
                     end
@@ -290,32 +257,36 @@ module chc5_ptp_timebase #(
                 endcase
             end
 
+            if (cm != 2'd0) d <= d_m;
             case (cm)
                 2'd0: begin
                     cm_evt <= 1'b0;
                     if (cm_start) cm <= 2'd1;
                 end
-                2'd1: begin sn_el <= sched_next - offs; cm <= 2'd2; cm_evt <= frame_evt; end
-                2'd2: begin cm <= 2'd3; cm_evt <= cm_evt | frame_evt; end
+                2'd1: begin
+                    d      <= {diff64[RW-33:0], 32'd0} - step_r - ONE_LSB;
+                    rng_ok <= (diff64[63:NS_W] == {(64-NS_W){1'b0}});
+                    p_lt   <= (sched_period[NS_W-1:0] < {{(NS_W-25){1'b0}}, l_floor, 1'b0});
+                    set_ok <= (line_period != 24'd0) && (sched_period[63:NS_W] == {(64-NS_W){1'b0}});
+                    cm <= 2'd2; cm_evt <= frame_evt;
+                end
+                2'd2: begin
+                    chk_fut  <= rng_ok && !d[RW-1] && (d[RW-2:32] >= GUARD_NS);
+                    chk_long <= ($signed(d[RW-1:32]) >= $signed(rem[RW-1:32]) - 1);
+                    cm <= 2'd3; cm_evt <= cm_evt | frame_evt;
+                end
                 default: begin
                     if (cm_evt || frame_evt) begin
                         cm <= 2'd2; cm_evt <= 1'b0;
                     end else begin
                         cm <= 2'd0;
                         if (st == S_IDLE || st == S_WAIT) begin
-                            p_ns <= sched_period; p_fr <= sched_period_frac;
-                            l_ns <= line_period; n_act <= frame_lines;
-                            tf <= {sn_el, 32'd0}; tmin <= sn_el;
-                            settle <= SETTLE[2:0]; settle_l <= SETTLE[2:0];
+                            p_fx <= p_new; l_ns <= line_period; n_act <= frame_lines; l_eff_ns <= l_floor;
+                            rem  <= d_m;
                             tgt_ok <= chk_fut && set_ok; late <= ~(chk_fut && set_ok);
                         end else if ((st == S_RUN || st == S_REANC) && chk_fut && chk_long && set_ok) begin
-                            pp_ns <= sched_period; pp_fr <= sched_period_frac;
-                            pl_ns <= line_period; pn <= frame_lines;
-                            tf <= {sn_el, 32'd0}; use_rem <= 1'b1; st <= S_REANC;
-                            if (can_l && ge_l && !ev_line && !ev_frame) begin
-                                tl <= el_now + 64'd48; settle_l <= SETTLE[2:0];
-                            end
-                            settle <= SETTLE[2:0]; late <= 1'b0;
+                            pp_fx <= p_new; pl_ns <= line_period; pn <= frame_lines; pl_eff_ns <= l_floor;
+                            rem  <= d_m; st <= S_REANC; late <= 1'b0;
                         end else begin
                             late <= 1'b1;
                         end
@@ -324,6 +295,15 @@ module chc5_ptp_timebase #(
             endcase
         end
     end
+
+    assign ln_period     = l_ns;
+    assign ln_period_eff = l_eff_ns;
+    assign ln_count  = n_act;
+    reg ln_more_r;
+    always @(posedge clk)
+        ln_more_r <= rstn && (st == S_REANC) && !rem[RW-1] &&
+                     (rem[RW-2:32] >= {{(NS_W-24){1'b0}}, l_ns} + {{(NS_W-16){1'b0}}, step_ns} + 1);
+    assign ln_more   = ln_more_r;
 
     assign ptp_active = running;
 

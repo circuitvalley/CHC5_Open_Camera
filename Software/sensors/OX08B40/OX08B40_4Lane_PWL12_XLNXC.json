@@ -2,10 +2,10 @@
   "manifest_kind": "sensor_v1",
   "manifest_version": 1,
   "manifest": {
-    "version": "0.4.2",
+    "version": "0.4.5",
     "vendor": "OmniVision",
     "model": "OX08B40",
-    "description": "OX08B40, 4 lanes, PWL 12-bit, Xilinx colour pipeline (ST30)"
+    "description": "OX08B40 4-lane PWL12, Xilinx colour pipeline (no AE/AWB, no 3x3 CCM)"
   },
   "kernel": {
     "module": "ox08b40",
@@ -123,5 +123,6 @@
       "pfnc": 35127317
     }
   ],
-  "bayer_order": "BGGR"
+  "bayer_order": "BGGR",
+  "bayer_flip_moves": "v"
 }

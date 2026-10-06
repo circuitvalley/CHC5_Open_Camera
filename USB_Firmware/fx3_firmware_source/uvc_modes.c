@@ -11,6 +11,7 @@
 #include <cyu3i2c.h>
 #include <cyu3types.h>
 #include <cyu3utils.h>
+#include <cyu3usbconst.h>
 #include "uvc_modes.h"
 #include "sensor_chc5.h"
 
@@ -62,32 +63,52 @@ static CyU3PReturnStatus_t CyFxUvcEepromRead(uint32_t addr, uint8_t *buf, uint32
         pre.buffer[3] = (uint8_t)(UVC_EEPROM_ADDR | 0x01 | ((addr >> 15) & 0x0E));
         pre.length    = 4;
         pre.ctrlMask  = 0x0004;
-        s = CyU3PI2cReceiveBytes(&pre, buf, n, 0);
+        {
+            int tries = UVC_EEPROM_READ_RETRIES;
+            do {
+                s = CyU3PI2cReceiveBytes(&pre, buf, n, 0);
+                if (s != CY_U3P_SUCCESS)
+                    sensor_i2c_error_read();
+            } while (s != CY_U3P_SUCCESS && --tries > 0);
+        }
         if (s != CY_U3P_SUCCESS) return s;
         addr += n; buf += n; len -= n;
     }
     return CY_U3P_SUCCESS;
 }
 
-static CyBool_t CyFxUvcModeSlotValid(uint32_t slot, uint32_t *outLen,
-                                     uint16_t *outGainMaxDb10)
+static uint8_t g_uvc_layout = 0;
+
+static uint8_t CyFxUvcEepromLayout(void)
 {
-    uint8_t  hdr[UVC_MODE_HDR_SIZE];
+    uint8_t m[4];
+
+    if (g_uvc_layout == 0)
+        g_uvc_layout = (CyFxUvcEepromRead(UVC_MODEPART_BASE, m, 4) == CY_U3P_SUCCESS &&
+                        rd32(m) == 0x4C524553u ) ? 2 : 1;
+    return g_uvc_layout;
+}
+
+static CyBool_t CyFxUvcModeSlotValid(uint32_t slot, uint32_t hs, uint32_t *outLen,
+                                     uint16_t *outGainMaxDb10, uint8_t *outTpCount,
+                                     uint16_t *outVer)
+{
+    uint8_t  hdr[UVC_MODE_HDR_MAX];
     uint8_t  tmp[64];
     uint32_t plen, want, crc, off;
 
-    if (CyFxUvcEepromRead(slot, hdr, UVC_MODE_HDR_SIZE) != CY_U3P_SUCCESS) return CyFalse;
+    if (CyFxUvcEepromRead(slot, hdr, hs) != CY_U3P_SUCCESS) return CyFalse;
     if (rd32(hdr + 0) != UVC_MODE_MAGIC) return CyFalse;
     plen = rd32(hdr + 12);
     if (plen == 0 || (plen % UVC_MODE_ENTRY_SIZE) != 0 ||
         plen > (UVC_MODE_MAX * UVC_MODE_ENTRY_SIZE)) return CyFalse;
     want = rd32(hdr + 4);
 
-    crc = CyFxUvcCrc32Upd(0xFFFFFFFFu, hdr + 8, UVC_MODE_HDR_SIZE - 8);
+    crc = CyFxUvcCrc32Upd(0xFFFFFFFFu, hdr + 8, hs - 8);
     for (off = 0; off < plen; )
     {
         uint16_t n = (plen - off > 64u) ? 64u : (uint16_t)(plen - off);
-        if (CyFxUvcEepromRead(slot + UVC_MODE_HDR_SIZE + off, tmp, n) != CY_U3P_SUCCESS) return CyFalse;
+        if (CyFxUvcEepromRead(slot + hs + off, tmp, n) != CY_U3P_SUCCESS) return CyFalse;
         crc = CyFxUvcCrc32Upd(crc, tmp, n);
         off += n;
     }
@@ -97,7 +118,25 @@ static CyBool_t CyFxUvcModeSlotValid(uint32_t slot, uint32_t *outLen,
     if (outGainMaxDb10)
         *outGainMaxDb10 = (uint16_t)(hdr[UVC_HDR_OFF_GAIN_MAX_DB10] |
                                      ((uint16_t)hdr[UVC_HDR_OFF_GAIN_MAX_DB10 + 1] << 8));
+    if (outTpCount)
+        *outTpCount = hdr[UVC_HDR_OFF_TP_COUNT];
+    if (outVer)
+        *outVer = rd16(hdr + 8);
     return CyTrue;
+}
+
+static CyBool_t CyFxUvcModeBufValid(uint32_t slot, uint32_t hs, const uint8_t *buf, uint32_t plen)
+{
+    uint8_t  hdr[UVC_MODE_HDR_MAX];
+    uint32_t crc, want;
+
+    if (CyFxUvcEepromRead(slot, hdr, hs) != CY_U3P_SUCCESS) return CyFalse;
+    if (rd32(hdr + 0) != UVC_MODE_MAGIC) return CyFalse;
+    want = rd32(hdr + 4);
+
+    crc = CyFxUvcCrc32Upd(0xFFFFFFFFu, hdr + 8, hs - 8);
+    crc = CyFxUvcCrc32Upd(crc, buf, plen);
+    return ((crc ^ 0xFFFFFFFFu) == want) ? CyTrue : CyFalse;
 }
 
 static uint8_t emit_frame(uint8_t *p, uint8_t idx, const uvc_mode_t *m)
@@ -166,35 +205,55 @@ static void build_cfg(uint8_t *out, const uint8_t *tmpl,
 }
 
 uint16_t g_uvc_gain_max_db10 = UVC_GAIN_MAX_DB10_FALLBACK;
+uint16_t g_uvc_hs_fps        = 30;
+uint8_t  g_uvc_tp_max        = UVC_TP_MAX_FALLBACK;
 
 void CyFxUvcLoadModesAndBuild(void)
 {
     uint32_t plen = 0;
     uint16_t gmax = 0;
+    uint8_t  tpn  = 0;
+    uint16_t ver  = 0;
+    uint8_t  layout = CyFxUvcEepromLayout();
+    uint32_t slot = (layout == 2) ? UVC_L2_MODE_SLOT     : UVC_MODEPART_BASE;
+    uint32_t hs   = (layout == 2) ? UVC_L2_MODE_HDR_SIZE : UVC_MODE_HDR_SIZE;
 
     CyU3PMemCopy((uint8_t *)g_uvc_modes, (uint8_t *)g_baked_ladder, sizeof(g_baked_ladder));
     g_uvc_nmodes = (uint8_t)(sizeof(g_baked_ladder) / sizeof(g_baked_ladder[0]));
 
-    if (CyFxUvcModeSlotValid(UVC_MODEPART_BASE, &plen, &gmax))
+    if (CyFxUvcModeSlotValid(slot, hs, &plen, &gmax, &tpn, &ver))
     {
+        CyU3PDebugPrint(4, "UVC modes: layout %d slot 0x%x v%d, %d B\r\n",
+                        layout, slot, ver, plen);
         if (gmax > 0u) {
             g_uvc_gain_max_db10 = gmax;
             CyU3PDebugPrint(4, "UVC gain max: %d.%d dB from EEPROM\r\n",
                             gmax / 10, gmax % 10);
         }
+        if (tpn > 0u && tpn <= 16u) {
+            g_uvc_tp_max = (uint8_t)(tpn - 1u);
+            CyU3PDebugPrint(4, "UVC test patterns: %d from EEPROM\r\n", tpn);
+        }
         uint8_t nb = (uint8_t)(plen / UVC_MODE_ENTRY_SIZE);
         uint8_t tmp[UVC_MODE_MAX * UVC_MODE_ENTRY_SIZE];
         if (nb >= 1 && nb <= UVC_MODE_MAX &&
-            CyFxUvcEepromRead(UVC_MODEPART_BASE + UVC_MODE_HDR_SIZE, tmp, plen) == CY_U3P_SUCCESS)
+            CyFxUvcEepromRead(slot + hs, tmp, plen) == CY_U3P_SUCCESS &&
+            CyFxUvcModeBufValid(slot, hs, tmp, plen))
         {
             CyU3PMemCopy((uint8_t *)g_uvc_modes, tmp, plen);
             g_uvc_nmodes = nb;
             CyU3PDebugPrint(4, "UVC modes: EEPROM slot, %d modes\r\n", nb);
         }
+        else
+        {
+            CyU3PDebugPrint(4, "UVC modes: slot read/verify failed -- "
+                               "keeping baked ladder\r\n");
+        }
     }
     else
     {
-        CyU3PDebugPrint(4, "UVC modes: baked ladder, %d modes\r\n", g_uvc_nmodes);
+        CyU3PDebugPrint(4, "UVC modes: layout %d, no valid slot, baked ladder, %d modes\r\n",
+                        layout, g_uvc_nmodes);
     }
 
     build_cfg(g_ss_cfg, CyFxUSBSSConfigDscr, g_uvc_modes, g_uvc_nmodes);
@@ -205,6 +264,48 @@ void CyFxUvcLoadModesAndBuild(void)
         if (cap > 30u) cap = 30u;
         if (cap < 1u)  cap = 1u;
         if (hs.fps == 0 || hs.fps > cap) hs.fps = (uint16_t)cap;
+        g_uvc_hs_fps = hs.fps;
         build_cfg(g_hs_cfg, CyFxUSBHSConfigDscr, &hs, 1);
     }
+}
+
+#define UVC_IDENT_OFF        0x3D000u
+#define UVC_L2_IDENT_OFF     0x38000u
+#define UVC_IDENT_SLOT       128u
+#define UVC_SERL_MAGIC       0x4C524553u
+#define UVC_SERIAL_MAX_CHARS 15u
+
+void CyFxUvcApplyIdentity(void)
+{
+    uint8_t  slot[UVC_IDENT_SLOT];
+    char     serial[49];
+    uint8_t  k;
+
+    serial[0] = '\0';
+    if (CyFxUvcEepromRead(CyFxUvcEepromLayout() == 2 ? UVC_L2_IDENT_OFF : UVC_IDENT_OFF,
+                          slot, UVC_IDENT_SLOT) == CY_U3P_SUCCESS &&
+        rd32(slot + 0) == UVC_SERL_MAGIC && rd16(slot + 8) >= 2u &&
+        (CyFxUvcCrc32Upd(0xFFFFFFFFu, slot + 8, UVC_IDENT_SLOT - 8) ^ 0xFFFFFFFFu) == rd32(slot + 4))
+    {
+        CyU3PMemCopy((uint8_t *)serial, slot + 0x10, 48);
+        serial[48] = '\0';
+    }
+
+    if (serial[0] == '\0')
+    {
+        static const char hex[] = "0123456789ABCDEF";
+        uint32_t idL = *(volatile uint32_t *)0xE0055010u;
+        for (k = 0; k < 8; k++)
+            serial[k] = hex[(idL >> ((7 - k) * 4)) & 0xF];
+        serial[8] = '\0';
+    }
+
+    for (k = 0; serial[k] && k < UVC_SERIAL_MAX_CHARS; k++)
+    {
+        CyFxUSBSerialDscr[2 + k * 2]     = (uint8_t)serial[k];
+        CyFxUSBSerialDscr[2 + k * 2 + 1] = 0x00;
+    }
+    CyFxUSBSerialDscr[0] = (uint8_t)(2 + k * 2);
+    CyFxUSBSerialDscr[1] = CY_U3P_USB_STRING_DESCR;
+    CyU3PDebugPrint(4, "UVC identity: serial '%s'\r\n", serial);
 }

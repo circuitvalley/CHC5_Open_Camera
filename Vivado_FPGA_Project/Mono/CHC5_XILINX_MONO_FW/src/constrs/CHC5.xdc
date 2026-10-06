@@ -172,6 +172,7 @@ set_property -dict {PACKAGE_PIN P15 IOSTANDARD LVCMOS18} [get_ports xmaster_0]
 set_property -dict {PACKAGE_PIN R19 IOSTANDARD LVCMOS18} [get_ports xtrig1_0]
 set_property -dict {PACKAGE_PIN T19 IOSTANDARD LVCMOS18} [get_ports xtrig2_0]
 set_property -dict {PACKAGE_PIN T11 IOSTANDARD LVCMOS18} [get_ports native_strobe_in_0]
+set_property -dict {PACKAGE_PIN T10 IOSTANDARD LVCMOS18} [get_ports ptp_evt_0]
 
 set_property -dict {PACKAGE_PIN V11 IOSTANDARD LVCMOS33} [get_ports opto_in_0]
 set_property -dict {PACKAGE_PIN V10 IOSTANDARD LVCMOS33} [get_ports opto_out_0]

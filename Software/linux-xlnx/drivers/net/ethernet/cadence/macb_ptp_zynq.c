@@ -122,6 +122,7 @@ static int zptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 	spin_lock_irqsave(&bp->tsu_clk_lock, flags);
 	timecounter_read(&bp->zptp_tc);
 	bp->zptp_cc.mult = mult;
+	bp->zptp_follow.steered = jiffies;
 	spin_unlock_irqrestore(&bp->tsu_clk_lock, flags);
 
 	return 0;
@@ -720,6 +721,8 @@ int macb_zynq_ptp_follow(struct net_device *ndev, u64 ref_ns, u64 gem_pre_ns,
 	}
 	f->last_offset_ns = offset;
 	f->last_window_ns = window;
+	if (f->state == 2)
+		f->steered = jiffies;
 
 	switch (f->state) {
 	case 0:
@@ -769,6 +772,29 @@ out:
 	return 0;
 }
 EXPORT_SYMBOL_GPL(macb_zynq_ptp_follow);
+
+#define ZPTP_FOLLOW_STALE	(2 * HZ)
+
+bool macb_zynq_ptp_following(struct net_device *ndev)
+{
+	unsigned long flags;
+	struct macb *bp;
+	bool r;
+
+	if (!ndev || !macb_is_macb_netdev(ndev))
+		return false;
+	bp = netdev_priv(ndev);
+	if (!macb_zynq_ptp(bp))
+		return false;
+
+	spin_lock_irqsave(&bp->tsu_clk_lock, flags);
+	r = bp->zptp_running && bp->zptp_follow.steered &&
+	    time_before(jiffies, bp->zptp_follow.steered + ZPTP_FOLLOW_STALE);
+	spin_unlock_irqrestore(&bp->tsu_clk_lock, flags);
+
+	return r;
+}
+EXPORT_SYMBOL_GPL(macb_zynq_ptp_following);
 
 struct macb_ptp_info zynq_gem_ptp_info = {
 	.ptp_init	 = zynq_gem_ptp_init,

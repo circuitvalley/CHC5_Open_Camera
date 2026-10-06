@@ -6,6 +6,8 @@
  * https://creativecommons.org/licenses/by-nc-nd/4.0/
  */
 
+#include "common/cam_power.dtsi"
+
 		clk_24m: clock_24m {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
@@ -15,6 +17,7 @@
 
 		ox08b40_avdd: fixedregulator@3 {
 			compatible = "regulator-fixed";
+			CHC5_CAM_VIN
 			regulator-name = "ox08b40_avdd";
 			regulator-min-microvolt = <2900000>;
 			regulator-max-microvolt = <2900000>;
@@ -23,6 +26,7 @@
 
 		ox08b40_dovdd: fixedregulator@4 {
 			compatible = "regulator-fixed";
+			CHC5_CAM_VIN
 			regulator-name = "ox08b40_dovdd";
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
@@ -30,6 +34,7 @@
 
 		ox08b40_dvdd: fixedregulator@5 {
 			compatible = "regulator-fixed";
+			CHC5_CAM_VIN
 			regulator-name = "ox08b40_dvdd";
 			regulator-min-microvolt = <1100000>;
 			regulator-max-microvolt = <1100000>;

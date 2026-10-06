@@ -11,6 +11,8 @@
 
 #include "common.h"
 
+void usb_cfg_from_wire(const chc5_i2c_cfg_t *w, imgsensor_cfg_t *c);
+
 int  usb_monitor_start(void);
 
 void usb_monitor_stop(void);
