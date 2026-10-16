@@ -24,7 +24,7 @@ define CHC5_PLATFORMD_BUILD_CMDS
 	@for a in $(CHC5_PLATFORMD_FAC_BS) $(CHC5_PLATFORMD_FAC_SN) $(CHC5_PLATFORMD_FAC_USB); do \
 	    test -f "$(CHC5_PLATFORMD_FACTORY_SRC)/$$a" || { \
 	        echo "chc5_platformd: factory archive $$a not found in firmware_store/." >&2; \
-	        echo "  The factory archives are published in a later release; place them in firmware_store/." >&2; \
+	        echo "  Ready-made archives are in firmware_store/ (README.md, Archives); name one, or add your own." >&2; \
 	        exit 1; }; \
 	done
 endef

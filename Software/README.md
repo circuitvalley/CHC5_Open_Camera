@@ -30,7 +30,7 @@ cannot be built from this tree.
 - An ARM cross compiler for the kernel, `arm-linux-gnueabihf-gcc`
   (Debian/Ubuntu: `gcc-arm-linux-gnueabihf`)
 - The factory archives in `firmware_store/`: one bitstream, one sensor and one
-  USB firmware archive. They are published in a later release.
+  USB firmware archive. Ready-made ones are included (see Archives).
 
 ## Archives
 
@@ -43,6 +43,22 @@ manifest:
 | Bitstream | `../Vivado_FPGA_Project/RGB/BITSTREAM_ARCHIVE.md` (colour), `../Vivado_FPGA_Project/Mono/BITSTREAM_ARCHIVE.md` (mono) |
 | USB firmware | `../USB_Firmware/USB_FW_ARCHIVE.md` |
 
+**Ready-made archives** in `firmware_store/`, each built from this repository by the steps in
+its manual:
+
+| File | What it is | Version |
+|---|---|---|
+| `chc5_xilinx_fw.tar.xz` | colour bitstream (`../Vivado_FPGA_Project/RGB`) | 1.5.0 |
+| `chc5_xilinx_mono_fw.tar.xz` | mono bitstream (`../Vivado_FPGA_Project/Mono`) | 1.4.0 |
+| `IMX565_4Lane_12bit_XLNXC.tar.xz` | IMX565 sensor, for the colour bitstream | 1.14.4 |
+| `USB_UVC_V1_12_1.tar.xz` | UVC USB firmware | 1.12.1 |
+
+- Upload them in the camera's web interface, or use them as factory archives (next section).
+- The sensor archive's modules are built for the kernel of the official camera release. They
+  also load on a kernel built from this repository: the symbol versions are the same.
+- The mono bitstream needs a mono (`_XLNXM`) sensor archive. None is included yet;
+  `sensors/SENSOR_ARCHIVE.md` says how to make one.
+
 ## Build
 
 ```
@@ -54,6 +70,12 @@ make bundle-debug
 `BITSTREAM`, `SENSOR` and `USB_FW` are file names in `firmware_store/`; they
 become the camera's factory defaults. `NETNAME=<name>` sets the camera's network
 name (default `chc5-cam`). `make help` lists the targets.
+
+A colour system from the ready-made archives:
+
+```
+make rootfs-debug BITSTREAM=chc5_xilinx_fw.tar.xz SENSOR=IMX565_4Lane_12bit_XLNXC.tar.xz USB_FW=USB_UVC_V1_12_1.tar.xz
+```
 
 The update is written to `buildroot_debug/output/images/chc5-debug-<date>.raucb`.
 Install it from the camera's web interface.
