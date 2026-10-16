@@ -2,7 +2,7 @@
   "manifest_kind": "sensor_v1",
   "manifest_version": 1,
   "manifest": {
-    "version": "1.14.3",
+    "version": "1.14.4",
     "description": "IMX565 4-lane 12-bit, Xilinx colour pipeline (no AE/AWB, no 3x3 CCM)",
     "vendor": "Sony",
     "model": "IMX565"
