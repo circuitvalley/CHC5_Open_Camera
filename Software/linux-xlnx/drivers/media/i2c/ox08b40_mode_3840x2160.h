@@ -2,23 +2,10 @@
 /*
  * OmniVision OX08B40 3840x2160 HDR4 mode register table
  *
- * 4-lane MIPI CSI-2 @ 960 Mbps/lane, four staggered captures (HCG/LCG/SPD/VS)
- * combined on-chip and PWL-companded to 12 bit -> MEDIA_BUS_FMT_SBGGR12_1X12.
- *
  * Transcribed from Ox08b40_mipi4lane_8M_native4dol_init[][2] in
  *   https://github.com/Xilinx/ISP_Firmware
  *   sensor_drivers/src/usr_sensor/include/sensor_drv/ox08b40_priv.h
  *   Copyright (c) 2025 Advanced Micro Devices, Inc.  SPDX: MIT
- *
- * Audited against the OX08B40 datasheet v2.05 (tools/audit_drivers.py):
- *   - no value sets a bit outside a documented field
- *   - all documented exposure/VTS constraints satisfied
- *   - fewest writes to undocumented registers of any available table
- *
- * Software reset (0x0103) and stream-on (0x0100) are omitted; the driver
- * issues both. Do NOT filter this table by the datasheet R/W column: every
- * vendor writes 0x5BE7/0x5C67/0x5CE7 and the BLC_OFFSET registers, which the
- * datasheet marks read-only.
  */
 #ifndef __OX08B40_MODE_3840X2160_H__
 #define __OX08B40_MODE_3840X2160_H__
@@ -291,18 +278,6 @@ static const struct cci_reg_sequence ox08b40_mode_3840x2160_regs[] = {
 	{CCI_REG8(0x431d), 0x67},
 	{CCI_REG8(0x431e), 0x11},
 	{CCI_REG8(0x431f), 0x20},
-	/*
-	 * 0x4320 FORMAT_REG_20 is absent from OX08B40 datasheet v2.05, but the
-	 * OX03F10 sibling specification documents it as a silicon errata
-	 * register, and all four published vendor tables write 0x3b:
-	 *   bit7 pack24_mipi8_ECO      = 0  (fix 24b packing in RAW8 mode)
-	 *   bit6 x_size0_switch_en_eco = 0
-	 *   bit5 emb_dmy_masked_eco    = 1  (embedded / dummy pixel masking)
-	 *   bit4 x_size_latch_en_eco   = 1
-	 *   bit3 x_size_shift_en_eco   = 1
-	 * If this mode is ever changed to 3x RAW8 24-bit packing, bit7 must be
-	 * set - nothing published sets it and the datasheet does not mention it.
-	 */
 	{CCI_REG8(0x4320), 0x3b},
 	{CCI_REG8(0x4323), 0x80},
 	{CCI_REG8(0x4324), 0x00},
