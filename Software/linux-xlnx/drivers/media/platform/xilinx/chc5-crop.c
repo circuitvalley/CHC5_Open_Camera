@@ -118,35 +118,6 @@ static inline u32 chc5crop_read(struct chc5crop_device *c, u32 reg)
 	return ioread32(c->iomem + reg);
 }
 
-static int chc5crop_bayer_row_of(u32 code, unsigned int *phase)
-{
-	unsigned int i, p;
-
-	for (i = 0; i < ARRAY_SIZE(chc5crop_bayer_codes); i++) {
-		for (p = 0; p < 4; p++) {
-			if (chc5crop_bayer_codes[i][p] == code) {
-				*phase = p;
-				return (int)i;
-			}
-		}
-	}
-	return -1;
-}
-
-static u32 chc5crop_shift_code(u32 code, u32 x, u32 y)
-{
-	unsigned int phase;
-	int row;
-
-	row = chc5crop_bayer_row_of(code, &phase);
-	if (row < 0)
-		return code;
-
-	phase ^= ((y & 1) << 1) | (x & 1);
-
-	return chc5crop_bayer_codes[row][phase & 0x3];
-}
-
 static void chc5crop_probe_params(struct chc5crop_device *c)
 {
 	u32 dt_ppc = 0;
@@ -260,8 +231,6 @@ static void chc5crop_update_source(struct chc5crop_device *c)
 	*src = *sink;
 	src->width  = c->crop.width;
 	src->height = c->crop.height;
-	src->code   = chc5crop_shift_code(sink->code,
-					  c->crop.left, c->crop.top);
 }
 
 static void chc5crop_write_window(struct chc5crop_device *c)
