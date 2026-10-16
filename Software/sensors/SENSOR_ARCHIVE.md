@@ -7,6 +7,8 @@ A sensor archive tells the camera which image sensor is fitted. It holds:
 
 Upload it in the web interface's **Sensor Library**, activate it and reboot.
 
+A ready-made one, `IMX565_4Lane_12bit_XLNXC` for the colour bitstream, is in `Software/firmware_store/`.
+
 This folder holds the sources of the archives for the two Xilinx-IP pipelines:
 
 ```

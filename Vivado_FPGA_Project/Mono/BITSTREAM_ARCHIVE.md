@@ -28,6 +28,9 @@ The result is `CHC5_XILINX_MONO_FW/output/<manifest name>.tar.xz`, for example
 library. The camera unpacks it, applies every check in this manual and adds it to the library.
 An archive whose `manifest.name` is already in the library replaces that entry.
 
+A ready-made archive of the current version, built this way, is
+`Software/firmware_store/chc5_xilinx_mono_fw.tar.xz`.
+
 `build.tcl` refuses to write an archive that the camera would reject. See [README.md](README.md#build-everything-buildtcl) for its steps and options.
 
 ---

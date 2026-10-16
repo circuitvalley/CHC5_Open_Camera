@@ -10,8 +10,8 @@ There are two firmwares:
 
 | Firmware | Protocol | Source |
 |---|---|---|
-| UVC | USB Video Class: works with any webcam application | `USB_Firmware/fx3_firmware_source` (this repository) |
-| U3V | USB3 Vision: for GenICam applications | released as a ready-made archive |
+| UVC | USB Video Class: works with any webcam application | `USB_Firmware/fx3_firmware_source` (this repository); ready-made archive `Software/firmware_store/USB_UVC_V1_12_1.tar.xz` |
+| U3V | USB3 Vision: for GenICam applications | released as a ready-made archive only; not included yet |
 
 ## Contents
 
