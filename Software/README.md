@@ -32,6 +32,17 @@ cannot be built from this tree.
 - The factory archives in `firmware_store/`: one bitstream, one sensor and one
   USB firmware archive. They are published in a later release.
 
+## Archives
+
+The camera loads three kinds of archive. Each manual says how to make one and what goes in its
+manifest:
+
+| Archive | Manual |
+|---|---|
+| Sensor | `sensors/SENSOR_ARCHIVE.md` |
+| Bitstream | `../Vivado_FPGA_Project/RGB/BITSTREAM_ARCHIVE.md` (colour), `../Vivado_FPGA_Project/Mono/BITSTREAM_ARCHIVE.md` (mono) |
+| USB firmware | `../USB_Firmware/USB_FW_ARCHIVE.md` |
+
 ## Build
 
 ```
