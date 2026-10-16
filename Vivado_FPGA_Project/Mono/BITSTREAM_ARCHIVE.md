@@ -58,7 +58,7 @@ byte-swapped form, which is why `bootgen` is used rather than Vivado's `write_bi
   "manifest_version": 1,
   "manifest": {
     "name": "chc5_xilinx_mono_fw",
-    "version": "1.0.0",
+    "version": "1.4.0",
     "description": "Xilinx-IP mono ISP for 4-lane 12-bit MIPI CSI-2 mono sensors ...",
     "build_date": "2026-09-21",
     "git_sha": "4aa4f029",
