@@ -1,0 +1,11 @@
+/buildroot-2025.02.13/output/
+/buildroot-2025.02.13/.chc5-defconfig
+/buildroot-2025.02.13_debug/output/
+/buildroot-2025.02.13_debug/.chc5-defconfig
+/br2-external/board/chc5/rootfs-overlay/etc/rauc/keyring.pem
+/br2-external/board/chc5/rootfs-overlay/etc/chc5-flavor
+/buildroot-2025.02.13_debug/.config
+/buildroot-2025.02.13_debug/.config.old
+/buildroot-2025.02.13_debug/..config.tmp
+/buildroot-2025.02.13_debug/.config.cmd
+/buildroot-2025.02.13/..config.tmp

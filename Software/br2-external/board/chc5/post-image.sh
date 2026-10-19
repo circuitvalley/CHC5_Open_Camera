@@ -28,7 +28,9 @@ cp -f "${BOARD_DIR}/kernel.its" "${WORK}/kernel.its"
 cp -f "${WORK}/kernel.itb" "${BINARIES_DIR}/kernel.itb"
 rm -rf "${WORK}"
 
-if [ "${CHC5_GENIMAGE_CFG:-}" = "genimage-debug.cfg" ]; then
+if [ -n "${CHC5_MEDIUM:-}" ]; then
+	echo "${CHC5_MEDIUM}" > "${BINARIES_DIR}/.medium"
+elif [ "${CHC5_GENIMAGE_CFG:-}" = "genimage-debug.cfg" ]; then
 	echo "sd-debug" > "${BINARIES_DIR}/.medium"
 else
 	echo "sd" > "${BINARIES_DIR}/.medium"

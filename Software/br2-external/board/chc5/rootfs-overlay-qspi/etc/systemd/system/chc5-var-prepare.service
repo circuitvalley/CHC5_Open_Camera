@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+#
+# chc5-var-prepare.service - prepare and mount the data partition (QSPI)
+#
+# Copyright (c) 2026 Circuit Valley - Author: Gaurav Singh
+# https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+[Unit]
+Description=CHC5 prepare + mount /var (UBIFS on the QSPI 'data' partition; re-created on a factory reset's request, RAM if it will not mount)
+DefaultDependencies=no
+After=systemd-udev-settle.service
+Before=var.mount local-fs.target sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/chc5/chc5-var-prepare.sh qspi
+
+[Install]
+WantedBy=sysinit.target

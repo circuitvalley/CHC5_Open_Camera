@@ -18,10 +18,22 @@ Third-party files keep their own licence.
 
 ## What you can build
 
-A **debug system** for the camera and its **update** (`.raucb`), signed with the
-public dev key in `br2-external/board/chc5/rauc-keys/`. A debug update installs
-only on a debug SD card. Production updates are signed by Circuit Valley and
-cannot be built from this tree.
+Two **updates** (`.raucb`), both signed with the public dev key in
+`br2-external/board/chc5/rauc-keys/`:
+
+| Update | Installs on | Make targets |
+|---|---|---|
+| `chc5-debug-<date>.raucb` | a debug SD card | `rootfs-debug`, `bundle-debug` |
+| `chc5-qspi-dev-<date>.raucb` | a QSPI camera running a dev image | `rootfs-qspi`, `qspi-bundle-dev` |
+
+- The debug system has extra tools (debugger, network capture, video tools) and only
+  fits the larger slots of a debug SD card.
+- A dev image accepts official updates and updates signed with the dev key. A
+  production image accepts official updates only, so it refuses both of these.
+- A system built from this tree runs the bitstreams in this repository (see Archives).
+  Bitstreams that come only with the official camera releases need the official update.
+- This tree builds updates only, no SD card image and no full QSPI flash image.
+  Production updates are signed by Circuit Valley and cannot be built from this tree.
 
 ## Requirements
 
@@ -61,21 +73,45 @@ its manual:
 
 ## Build
 
+Debug SD update:
+
 ```
 make kernel
 make rootfs-debug BITSTREAM=<bitstream archive> SENSOR=<sensor archive> USB_FW=<usb firmware archive>
 make bundle-debug
 ```
 
+QSPI dev update:
+
+```
+make kernel
+make rootfs-qspi BITSTREAM=<bitstream archive> SENSOR=<sensor archive> USB_FW=<usb firmware archive>
+make qspi-bundle-dev
+```
+
 `BITSTREAM`, `SENSOR` and `USB_FW` are file names in `firmware_store/`; they
 become the camera's factory defaults. `NETNAME=<name>` sets the camera's network
 name (default `chc5-cam`). `make help` lists the targets.
+
+The two systems build in separate Buildroot trees (`buildroot_debug/` and
+`buildroot/`), so both can be kept. Build them one after the other, not at the
+same time: both write the update keyring in `br2-external/` before they build.
 
 A colour system from the ready-made archives:
 
 ```
 make rootfs-debug BITSTREAM=chc5_xilinx_fw.tar.xz SENSOR=IMX565_4Lane_12bit_XLNXC.tar.xz USB_FW=USB_UVC_V1_12_1.tar.xz
+make rootfs-qspi  BITSTREAM=chc5_xilinx_fw.tar.xz SENSOR=IMX565_4Lane_12bit_XLNXC.tar.xz USB_FW=USB_UVC_V1_12_1.tar.xz
 ```
 
-The update is written to `buildroot_debug/output/images/chc5-debug-<date>.raucb`.
-Install it from the camera's web interface.
+The updates are written to:
+
+| Update | File |
+|---|---|
+| debug SD | `buildroot_debug/output/images/chc5-debug-<date>.raucb` |
+| QSPI dev | `buildroot/output/images/chc5-qspi-dev-<date>.raucb` |
+
+Install an update from the camera's web interface. Each update checks that it
+matches the camera's medium (SD or QSPI) and refuses to install otherwise.
+`qspi-bundle-dev` refuses to sign a root filesystem or kernel that does not fit the
+camera's QSPI slots.
